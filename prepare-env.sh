@@ -19,11 +19,15 @@ fi
 # 2. Get Git Versioning Information
 VERSION=""
 if command -v git &> /dev/null && ([ -d .git ] || git rev-parse --is-inside-work-tree &> /dev/null); then
-  VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "")
+  VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 fi
 
 if [ -z "$VERSION" ]; then
   VERSION="dev"
+fi
+
+if [ "$VERSION" != "dev" ] && [[ ! "$VERSION" =~ ^[vV] ]]; then
+  VERSION="v$VERSION"
 fi
 
 echo "Detected version: $VERSION"
