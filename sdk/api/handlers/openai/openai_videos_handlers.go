@@ -147,6 +147,19 @@ func videosModelBase(model string) string {
 func isXAIVideosModel(model string) bool {
 	prefix, baseModel := imagesModelParts(model)
 	baseModel = strings.ToLower(strings.TrimSpace(baseModel))
+
+	// Heuristics for third-party video models
+	keywords := []string{"video", "vid", "sora", "cogvideo", "kling", "luma", "runway", "minimax"}
+	cfg := GetActiveSDKConfig()
+	if cfg != nil {
+		keywords = append(keywords, cfg.CustomVideoModelKeywords...)
+	}
+	for _, kw := range keywords {
+		if kw != "" && strings.Contains(baseModel, strings.ToLower(strings.TrimSpace(kw))) {
+			return true
+		}
+	}
+
 	if baseModel != defaultXAIVideosModel && baseModel != xaiVideos15PreviewModel {
 		return false
 	}
@@ -158,7 +171,21 @@ func isXAIVideosModel(model string) bool {
 func isSoraVideosModel(model string) bool {
 	_, baseModel := imagesModelParts(model)
 	baseModel = strings.ToLower(strings.TrimSpace(baseModel))
-	return baseModel == defaultOpenAIVideosModel || strings.HasPrefix(baseModel, defaultOpenAIVideosModel+"-")
+	if baseModel == defaultOpenAIVideosModel || strings.HasPrefix(baseModel, defaultOpenAIVideosModel+"-") {
+		return true
+	}
+	// Heuristics for third-party video models
+	keywords := []string{"video", "vid", "sora", "cogvideo", "kling", "luma", "runway", "minimax"}
+	cfg := GetActiveSDKConfig()
+	if cfg != nil {
+		keywords = append(keywords, cfg.CustomVideoModelKeywords...)
+	}
+	for _, kw := range keywords {
+		if kw != "" && strings.Contains(baseModel, strings.ToLower(strings.TrimSpace(kw))) {
+			return true
+		}
+	}
+	return false
 }
 
 func isSupportedVideosModel(model string) bool {

@@ -55,6 +55,12 @@ type SDKConfig struct {
 	// NonStreamKeepAliveInterval controls how often blank lines are emitted for non-streaming responses.
 	// <= 0 disables keep-alives. Value is in seconds.
 	NonStreamKeepAliveInterval int `yaml:"nonstream-keepalive-interval,omitempty" json:"nonstream-keepalive-interval,omitempty"`
+
+	// CustomImageModelKeywords allows extending the heuristic keywords used to identify third-party image models.
+	CustomImageModelKeywords []string `yaml:"custom-image-model-keywords,omitempty" json:"custom-image-model-keywords,omitempty"`
+
+	// CustomVideoModelKeywords allows extending the heuristic keywords used to identify third-party video models.
+	CustomVideoModelKeywords []string `yaml:"custom-video-model-keywords,omitempty" json:"custom-video-model-keywords,omitempty"`
 }
 
 // StreamingConfig holds server streaming behavior configuration.

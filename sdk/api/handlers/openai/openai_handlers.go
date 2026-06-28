@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	. "github.com/router-for-me/CLIProxyAPI/v7/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
@@ -22,6 +23,29 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+var (
+	activeSDKConfig   *config.SDKConfig
+	activeSDKConfigMu sync.RWMutex
+)
+
+func init() {
+	handlers.OnConfigUpdate = UpdateActiveSDKConfig
+}
+
+// UpdateActiveSDKConfig sets the active SDK configuration.
+func UpdateActiveSDKConfig(cfg *config.SDKConfig) {
+	activeSDKConfigMu.Lock()
+	defer activeSDKConfigMu.Unlock()
+	activeSDKConfig = cfg
+}
+
+// GetActiveSDKConfig gets the active SDK configuration.
+func GetActiveSDKConfig() *config.SDKConfig {
+	activeSDKConfigMu.RLock()
+	defer activeSDKConfigMu.RUnlock()
+	return activeSDKConfig
+}
 
 // OpenAIAPIHandler contains the handlers for OpenAI API endpoints.
 // It holds a pool of clients to interact with the backend service.
@@ -38,6 +62,9 @@ type OpenAIAPIHandler struct {
 // Returns:
 //   - *OpenAIAPIHandler: A new OpenAI API handlers instance
 func NewOpenAIAPIHandler(apiHandlers *handlers.BaseAPIHandler) *OpenAIAPIHandler {
+	if apiHandlers != nil {
+		UpdateActiveSDKConfig(apiHandlers.Cfg)
+	}
 	return &OpenAIAPIHandler{
 		BaseAPIHandler: apiHandlers,
 	}
@@ -686,4 +713,32 @@ func (h *OpenAIAPIHandler) handleStreamResult(c *gin.Context, flusher http.Flush
 			_, _ = fmt.Fprint(c.Writer, "data: [DONE]\n\n")
 		},
 	})
+}
+
+// Embeddings handles the /v1/embeddings endpoint.
+func (h *OpenAIAPIHandler) Embeddings(c *gin.Context) {
+	c.Header("Content-Type", "application/json")
+
+	rawJSON, err := handlers.ReadRequestBody(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, handlers.ErrorResponse{
+			Error: handlers.ErrorDetail{
+				Message: fmt.Sprintf("Invalid request: %v", err),
+				Type:    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	modelName := gjson.GetBytes(rawJSON, "model").String()
+	cliCtx, cliCancel := h.GetContextWithCancel(h, c, context.Background())
+	resp, upstreamHeaders, errMsg := h.ExecuteWithAuthManager(cliCtx, h.HandlerType(), modelName, rawJSON, h.GetAlt(c))
+	if errMsg != nil {
+		h.WriteErrorResponse(c, errMsg)
+		cliCancel(errMsg.Error)
+		return
+	}
+	handlers.WriteUpstreamHeaders(c.Writer.Header(), upstreamHeaders)
+	_, _ = c.Writer.Write(resp)
+	cliCancel()
 }

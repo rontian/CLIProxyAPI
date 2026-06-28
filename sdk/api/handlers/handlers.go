@@ -427,13 +427,20 @@ func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager) *B
 	}
 }
 
+var OnConfigUpdate func(cfg *config.SDKConfig)
+
 // UpdateClients updates the handlers' client list and configuration.
 // This method is called when the configuration or authentication tokens change.
 //
 // Parameters:
 //   - clients: The new slice of AI service clients
 //   - cfg: The new application configuration
-func (h *BaseAPIHandler) UpdateClients(cfg *config.SDKConfig) { h.Cfg = cfg }
+func (h *BaseAPIHandler) UpdateClients(cfg *config.SDKConfig) {
+	h.Cfg = cfg
+	if OnConfigUpdate != nil {
+		OnConfigUpdate(cfg)
+	}
+}
 
 // SetPluginHost configures the optional plugin interceptor host.
 func (h *BaseAPIHandler) SetPluginHost(host PluginInterceptorHost) {

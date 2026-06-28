@@ -233,7 +233,22 @@ func isOpenAICompatImagesModel(model string) bool {
 		return false
 	}
 	info := registry.LookupModelInfo(model)
-	return info != nil && info.Type == registry.OpenAIImageModelType
+	if info != nil && info.Type == registry.OpenAIImageModelType {
+		return true
+	}
+	// Heuristics: check name keywords for custom/third-party image models
+	lower := strings.ToLower(model)
+	keywords := []string{"image", "imagine", "dall-e", "flux", "sdxl", "stable-diffusion", "midjourney", "paint", "draw", "playground", "imagen"}
+	cfg := GetActiveSDKConfig()
+	if cfg != nil {
+		keywords = append(keywords, cfg.CustomImageModelKeywords...)
+	}
+	for _, kw := range keywords {
+		if kw != "" && strings.Contains(lower, strings.ToLower(strings.TrimSpace(kw))) {
+			return true
+		}
+	}
+	return false
 }
 
 func rejectUnsupportedImagesModel(c *gin.Context, model string) bool {

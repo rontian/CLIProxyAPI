@@ -564,6 +564,18 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 			}
 		}
 	}
+	if auth.Metadata != nil {
+		if rawAliases, ok := auth.Metadata["model-aliases"]; ok {
+			entry["model-aliases"] = rawAliases
+		} else if rawAliases, ok := auth.Metadata["model_aliases"]; ok {
+			entry["model-aliases"] = rawAliases
+		}
+		if rawExcluded, ok := auth.Metadata["excluded-models"]; ok {
+			entry["excluded-models"] = rawExcluded
+		} else if rawExcluded, ok := auth.Metadata["excluded_models"]; ok {
+			entry["excluded-models"] = rawExcluded
+		}
+	}
 	if websockets, ok := authWebsocketsValue(auth); ok {
 		entry["websockets"] = websockets
 	}
