@@ -33,7 +33,7 @@ docs/*
 AGENTS.md
 CLAUDE.md
 GEMINI.md
-
+!docs/development.md
 # Tooling metadata
 .vscode/*
 .worktrees/
