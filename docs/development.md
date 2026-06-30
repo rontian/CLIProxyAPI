@@ -8,6 +8,24 @@
 
 在 macOS 上进行开发与测试，您需要准备以下环境：
 
+### 工作区路径约定
+
+本文档假设 `CLIProxyAPI` 与 `CPA-Manager` 两个仓库位于同一个父目录下。不同设备上的物理路径不需要一致，建议在当前终端设置一个工作区变量：
+
+```bash
+export CPA_WORKSPACE=/path/to/your/workspace
+```
+
+例如目录结构为：
+
+```text
+$CPA_WORKSPACE/
+  CLIProxyAPI/
+  CPA-Manager/
+```
+
+如果您已经在某个仓库目录内，也可以直接用相对路径进入另一个仓库，例如从 `CLIProxyAPI` 进入 `../CPA-Manager`。
+
 ### Go 运行环境 (后端)
 - **版本要求**：Go 1.26+ (项目使用了 Go 1.26 新特性，请确保版本不低于 1.26)。
 - **检查命令**：
@@ -39,7 +57,7 @@
 
 1. **进入目录**：
    ```bash
-   cd /Volumes/MacintoshWD/rontian/CLIProxyAPI
+   cd "$CPA_WORKSPACE/CLIProxyAPI"
    ```
 2. **初始化配置**：
    如果目录下没有 `config.yaml`，请先基于模板复制一份：
@@ -61,7 +79,7 @@
 
 1. **进入目录**：
    ```bash
-   cd /Volumes/MacintoshWD/rontian/CPA-Manager
+   cd "$CPA_WORKSPACE/CPA-Manager"
    ```
 2. **安装依赖**：
    ```bash
@@ -93,8 +111,8 @@
    *Vite 会将整个 React 应用及样式打包并合并生成一个单文件的 `dist/index.html`。*
 2. 创建 CLIProxyAPI 下的静态资源目录并将文件拷贝过去：
    ```bash
-   mkdir -p /Volumes/MacintoshWD/rontian/CLIProxyAPI/static
-   cp /Volumes/MacintoshWD/rontian/CPA-Manager/dist/index.html /Volumes/MacintoshWD/rontian/CLIProxyAPI/static/management.html
+   mkdir -p "$CPA_WORKSPACE/CLIProxyAPI/static"
+   cp "$CPA_WORKSPACE/CPA-Manager/dist/index.html" "$CPA_WORKSPACE/CLIProxyAPI/static/management.html"
    ```
 3. 启动 `CLIProxyAPI` 服务，现在您便可以直接在浏览器访问 `http://localhost:8317/management.html` 来管理代理服务器了。
 
@@ -104,7 +122,7 @@
 **方法 A：直接在 macOS 本地运行（推荐，非 Docker 模式）**：
 1. **进入 usage-service 目录**：
    ```bash
-   cd /Volumes/MacintoshWD/rontian/CPA-Manager/usage-service
+   cd "$CPA_WORKSPACE/CPA-Manager/usage-service"
    ```
 2. **运行 Go 服务**：
    ```bash
@@ -115,7 +133,7 @@
 **方法 B：使用 Docker 模式启动（标准 Docker Compose 部署）**：
 1. **进入 CPA-Manager 目录**：
    ```bash
-   cd /Volumes/MacintoshWD/rontian/CPA-Manager
+   cd "$CPA_WORKSPACE/CPA-Manager"
    ```
 2. **复制配置并填写环境变量**：
    ```bash
@@ -182,3 +200,158 @@ curl -X POST http://localhost:8317/v1/images/generations \
        { "name": "gemini-3.5-flash-low", "alias": "gemini-3.5-flash" }
      ]
      ```
+
+### 验证 4.4：Auto 模型路由 (Auto Router) 配置与 dry-run
+
+Auto Router 第一版提供一个客户端可见的 `auto` 模型。后端根据配置的角色、主脑模型、匹配关键词和 sticky session 策略，把请求路由到具体 provider/model。详细设计见 `docs/auto-router.md`。
+
+#### 4.4.1 在 CPA-Manager 中配置
+
+1. 启动 `CLIProxyAPI` 与 `CPA-Manager` 后，打开 `http://localhost:5173`。
+2. 登录后进入左侧 **“Auto 模型”** 页面。
+3. 点击 **“添加 Auto 模型”**，确认或填写以下关键字段：
+   - 模型名称：`auto`
+   - Fallback Provider / Model：例如 `claude` / `claude-sonnet-4-5`
+   - 主脑 Provider / Model：例如 `gemini` / `gemini-2.5-flash`，也可以留空只使用关键词规则
+   - 粘性会话：保持启用，TTL 可使用 `30m`
+   - 角色：至少配置一个 `coding` 角色，并在匹配关键词中加入 `docker`、`go test`、`stack trace`
+4. 点击 **“保存”**。
+
+#### 4.4.2 在 CPA-Manager 中执行 dry-run
+
+dry-run 只预览确定性规则路由，不调用主脑模型，也不会创建新的 sticky session。它用于快速确认某条用户输入会命中哪个角色。
+
+1. 在 **“Auto 模型”** 页面右侧 **“Dry-run 测试”** 区域填写：
+   - 请求模型：`auto`
+   - Session ID：`preview-session`
+   - 用户输入：`new task: debug this docker build failure`
+2. 点击 **“运行测试”**。
+3. 预期结果应显示命中的角色，例如：
+   - `role_id`: `coding`
+   - `provider/model`: 配置中 `coding` 角色对应的目标
+   - `reason`: 包含 `matched keyword "docker"` 或类似匹配原因
+
+#### 4.4.3 使用 curl 执行 dry-run
+
+```bash
+curl -s http://localhost:8317/v0/management/auto-router/dry-run \
+  -H "Authorization: Bearer <您的Management Key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "source_format": "openai",
+    "headers": {
+      "X-Session-Id": ["preview-session"]
+    },
+    "body": {
+      "messages": [
+        {"role": "user", "content": "new task: debug this docker build failure"}
+      ]
+    }
+  }'
+```
+
+典型返回：
+
+```json
+{
+  "handled": true,
+  "decision": {
+    "provider": "codex",
+    "model": "gpt-5-codex",
+    "role_id": "coding",
+    "reason": "matched keyword \"docker\"",
+    "brain": false,
+    "sticky": false
+  }
+}
+```
+
+#### 4.4.4 验证真实 `model=auto` 请求
+
+确认 dry-run 命中预期角色后，可以用真实 OpenAI Chat Completions 请求测试路由执行。此请求会真正调用被路由到的上游模型。
+
+```bash
+curl -s http://localhost:8317/v1/chat/completions \
+  -H "Authorization: Bearer <您的用户API-Key>" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: local-auto-test" \
+  -d '{
+    "model": "auto",
+    "messages": [
+      {"role": "user", "content": "debug this docker build failure"}
+    ]
+  }'
+```
+
+如需验证 sticky session，可继续使用相同 `X-Session-Id` 发送追问：
+
+```bash
+curl -s http://localhost:8317/v1/chat/completions \
+  -H "Authorization: Bearer <您的用户API-Key>" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: local-auto-test" \
+  -d '{
+    "model": "auto",
+    "messages": [
+      {"role": "user", "content": "debug this docker build failure"},
+      {"role": "assistant", "content": "Please share the Dockerfile and error output."},
+      {"role": "user", "content": "那应该怎么修？"}
+    ]
+  }'
+```
+
+如果需要强制重新判定当前 sticky session，可以使用显式切换信号：
+
+```bash
+curl -s http://localhost:8317/v1/chat/completions \
+  -H "Authorization: Bearer <您的用户API-Key>" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: local-auto-test" \
+  -H "X-Auto-Route-Reset: true" \
+  -d '{
+    "model": "auto",
+    "messages": [
+      {"role": "user", "content": "new task: summarize this text"}
+    ]
+  }'
+```
+
+#### 4.4.5 查看和清理 sticky sessions
+
+在 CPA-Manager 的 **“Auto 模型”** 页面右侧 **“运行态会话”** 区域可以查看和清空 sticky session。
+
+也可以使用 curl：
+
+```bash
+curl -s http://localhost:8317/v0/management/auto-router/sessions \
+  -H "Authorization: Bearer <您的Management Key>"
+```
+
+```bash
+curl -X DELETE -s http://localhost:8317/v0/management/auto-router/sessions \
+  -H "Authorization: Bearer <您的Management Key>"
+```
+
+---
+
+## 5. 提交前验证建议
+
+后端改动建议至少执行：
+
+```bash
+cd "$CPA_WORKSPACE/CLIProxyAPI"
+gofmt -w .
+go test ./internal/api/handlers/management ./internal/api ./internal/autorouter ./internal/config ./sdk/api/handlers ./sdk/api/handlers/openai ./sdk/config
+go build -o test-output ./cmd/server && rm test-output
+```
+
+前端改动建议至少执行：
+
+```bash
+cd "$CPA_WORKSPACE/CPA-Manager"
+npm run type-check
+npm run build
+```
+
+当前 `go test ./...` 仍可能在既有无关包失败；如果只验证 Auto Router，本节后端目标测试更有针对性。
