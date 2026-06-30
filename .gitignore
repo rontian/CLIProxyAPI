@@ -1,6 +1,8 @@
 # Binaries
 cli-proxy-api
 *.exe
+!tools/sync-config-windows-amd64.exe
+!tools/sync-config-windows-arm64.exe
 
 # Configuration
 config.yaml

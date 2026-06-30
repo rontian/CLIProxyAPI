@@ -86,23 +86,23 @@ make sync-config-dry
 make sync-config
 ```
 
-其中 `make sync-config` 只是调用独立脚本 `./scripts/sync-config.py`。生产环境或没有安装 `make` 的设备可以直接执行脚本。
+其中 `make sync-config` 只用于本地开发。生产或远程主机不应依赖 `make`、Python 或 Go 环境，应直接执行 `tools/` 下对应平台的预编译二进制。
 
 ### 2.2 同步本地配置文件
 
-当 `config.example.yaml` 或 `.env.example` 新增配置项时，不建议直接覆盖已有的 `config.yaml` 或 `.env`。可以使用同步脚本只补缺失项，已有配置值不会被改动。
+当 `config.example.yaml` 或 `.env.example` 新增配置项时，不建议直接覆盖已有的 `config.yaml` 或 `.env`。可以使用同步工具只补缺失项，已有配置值不会被改动。
 
-先预览：
+远程 Linux x86_64 主机先预览：
 
 ```bash
 cd "$CPA_WORKSPACE/CLIProxyAPI"
-./scripts/sync-config.py --dry-run
+./tools/sync-config-linux-amd64 --dry-run
 ```
 
 确认后执行：
 
 ```bash
-./scripts/sync-config.py
+./tools/sync-config-linux-amd64
 ```
 
 脚本默认同步：
@@ -110,14 +110,21 @@ cd "$CPA_WORKSPACE/CLIProxyAPI"
 - `config.example.yaml` -> `config.yaml`
 - `.env.example` -> `.env`
 
-也可以指定路径：
+ARM64 主机使用 `sync-config-linux-arm64`。也可以指定路径：
 
 ```bash
-./scripts/sync-config.py \
+./tools/sync-config-linux-amd64 \
   --config /etc/cliproxy/config.yaml \
   --config-example ./config.example.yaml \
   --env /etc/cliproxy/.env \
   --env-example ./.env.example
+```
+
+开发机也可以使用 Go 源码或 Python 备用脚本：
+
+```bash
+go run ./tools/sync-config --dry-run
+./scripts/sync-config.py --dry-run
 ```
 
 ---
@@ -172,13 +179,15 @@ make sync-config-dry
 make sync-config
 ```
 
-`make sync-config` 只会同步 `.env.example` -> `.env`。生产环境可直接运行独立脚本：
+`make sync-config` 只用于本地开发，并且只会同步 `.env.example` -> `.env`。生产或远程主机不应依赖 `make`、Python 或 Go 环境，应直接运行预编译二进制：
 
 ```bash
 cd "$CPA_WORKSPACE/CPA-Manager"
-./scripts/sync-config.py --skip-yaml --dry-run
-./scripts/sync-config.py --skip-yaml
+./tools/sync-config-linux-amd64 --skip-yaml --dry-run
+./tools/sync-config-linux-amd64 --skip-yaml
 ```
+
+ARM64 主机使用 `sync-config-linux-arm64`。Python 脚本 `./scripts/sync-config.py` 仅作为开发机备用入口保留。
 
 ### 3.5 CPA-Manager 静态文件编译与嵌入部署
 如果您希望将编译好的前端代码，直接作为 CLIProxyAPI 自身的控制面板资源部署运行（即通过 `http://localhost:8317/management.html` 访问，不需要在 5173 开启单独的前端服务器）：

@@ -6,6 +6,7 @@
 - [x] Record branch-sync rules for keeping `main` aligned with upstream and merging into `main_ai`.
 - [x] Add task/status maintenance rules to `AGENTS.md`.
 - [x] Use typed Chinese commit messages for future local-extension work.
+- [x] Add Python-free config sync path for production hosts.
 
 ## V1 Stable Router
 
