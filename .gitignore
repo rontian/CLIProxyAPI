@@ -34,6 +34,7 @@ docs/*
 !docs/project.md
 !docs/tasks.md
 !docs/provider-model-targets_CN.md
+!docs/local-extension-merge-guide_CN.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md

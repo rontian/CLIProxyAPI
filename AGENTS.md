@@ -42,6 +42,9 @@ go build -o test-output ./cmd/server && rm test-output # Verify compile (REQUIRE
 
 ## Code Conventions
 - Keep changes small and simple (KISS)
+- Before starting a non-trivial task, update `docs/tasks.md` with the plan/status entry for that task. Keep task statuses current during the work and record follow-up direction when relevant.
+- Git commit messages for local extension work must use a typed format with Chinese description, such as `feat(auto-router): 支持自定义角色预设`, `fix(video): 修复视频结果绑定`, `docs(merge): 更新合并指南`, or `chore(config): 同步示例配置`.
+- When updating or adding local extensions that may affect upstream merges, update `docs/local-extension-merge-guide_CN.md` in the same change.
 - Comments in English only
 - If editing code that already contains non-English comments, translate them to English (don’t add new non-English comments)
 - For user-visible strings, keep the existing language used in that file/area

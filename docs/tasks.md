@@ -1,5 +1,12 @@
 # Auto Model Routing Tasks
 
+## Maintenance and Merge Governance
+
+- [x] Create a local-extension merge guide covering embedding, OAuth model aliases, image/video generation, and Auto Router.
+- [x] Record branch-sync rules for keeping `main` aligned with upstream and merging into `main_ai`.
+- [x] Add task/status maintenance rules to `AGENTS.md`.
+- [x] Use typed Chinese commit messages for future local-extension work.
+
 ## V1 Stable Router
 
 - [x] Add auto-router config schema.
