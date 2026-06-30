@@ -73,6 +73,53 @@ $CPA_WORKSPACE/
    ```
    *服务默认会监听在 `8317` 端口。管理 API 基地址为：`http://localhost:8317/v0/management`。*
 
+### 2.1 常用 Makefile 命令
+
+`CLIProxyAPI` 仓库提供了 `Makefile` 作为开发快捷入口：
+
+```bash
+make help
+make dev
+make test-auto
+make build
+make sync-config-dry
+make sync-config
+```
+
+其中 `make sync-config` 只是调用独立脚本 `./scripts/sync-config.py`。生产环境或没有安装 `make` 的设备可以直接执行脚本。
+
+### 2.2 同步本地配置文件
+
+当 `config.example.yaml` 或 `.env.example` 新增配置项时，不建议直接覆盖已有的 `config.yaml` 或 `.env`。可以使用同步脚本只补缺失项，已有配置值不会被改动。
+
+先预览：
+
+```bash
+cd "$CPA_WORKSPACE/CLIProxyAPI"
+./scripts/sync-config.py --dry-run
+```
+
+确认后执行：
+
+```bash
+./scripts/sync-config.py
+```
+
+脚本默认同步：
+
+- `config.example.yaml` -> `config.yaml`
+- `.env.example` -> `.env`
+
+也可以指定路径：
+
+```bash
+./scripts/sync-config.py \
+  --config /etc/cliproxy/config.yaml \
+  --config-example ./config.example.yaml \
+  --env /etc/cliproxy/.env \
+  --env-example ./.env.example
+```
+
 ---
 
 ## 3. CPA-Manager 本地启动流程 (前端)
@@ -100,6 +147,28 @@ $CPA_WORKSPACE/
    - 在弹出的配置连接框中输入：
      - **API Base URL**：`http://localhost:8317`
      - **Management Key**：填写您在后端 `config.yaml` 中配置的管理 Key。
+
+### 3.1 常用 Makefile 命令
+
+`CPA-Manager` 仓库同样提供了 `Makefile`：
+
+```bash
+make help
+make install
+make dev
+make type-check
+make build
+make sync-config-dry
+make sync-config
+```
+
+`make sync-config` 只会同步 `.env.example` -> `.env`。生产环境可直接运行独立脚本：
+
+```bash
+cd "$CPA_WORKSPACE/CPA-Manager"
+./scripts/sync-config.py --skip-yaml --dry-run
+./scripts/sync-config.py --skip-yaml
+```
 
 ### 3.5 CPA-Manager 静态文件编译与嵌入部署
 如果您希望将编译好的前端代码，直接作为 CLIProxyAPI 自身的控制面板资源部署运行（即通过 `http://localhost:8317/management.html` 访问，不需要在 5173 开启单独的前端服务器）：
