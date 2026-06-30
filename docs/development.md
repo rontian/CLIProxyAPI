@@ -134,13 +134,21 @@ cd "$CPA_WORKSPACE/CLIProxyAPI"
    # 或者使用 bun:
    bun install
    ```
-3. **运行开发服务器**：
+3. **运行本地开发环境**：
    ```bash
-   npm run dev
-   # 或者使用 bun:
-   bun run dev
+   make dev
    ```
-   *Vite 开发服务器默认启动在 `http://localhost:5173`。*
+   *该命令会同时启动 Vite 前端和 usage-service。Vite 默认监听 `http://localhost:5173`，usage-service 默认监听 `http://localhost:18317`。*
+
+   如只需要前端页面，不启动 usage-service：
+   ```bash
+   make dev-web
+   ```
+
+   如只需要 usage-service：
+   ```bash
+   make dev-usage
+   ```
 
 4. **网页端登录配置**：
    - 打开浏览器访问 `http://localhost:5173`。
@@ -156,6 +164,8 @@ cd "$CPA_WORKSPACE/CLIProxyAPI"
 make help
 make install
 make dev
+make dev-web
+make dev-usage
 make type-check
 make build
 make sync-config-dry
@@ -188,7 +198,18 @@ cd "$CPA_WORKSPACE/CPA-Manager"
 ### 3.6 本地启动额度统计服务 (usage-service)
 如果您在本地开发测试中，也希望使用 API 密钥的“别名（Alias）”编辑以及调用数据统计历史图表：
 
-**方法 A：直接在 macOS 本地运行（推荐，非 Docker 模式）**：
+**方法 A：通过 Makefile 启动（推荐，非 Docker 模式）**：
+1. **进入 CPA-Manager 目录**：
+   ```bash
+   cd "$CPA_WORKSPACE/CPA-Manager"
+   ```
+2. **单独启动 usage-service**：
+   ```bash
+   make dev-usage
+   ```
+   *服务启动后会监听在本地的 `18317` 端口。同时会在 `usage-service` 目录下创建 `config.json` 配置文件及存放 SQLite 数据库的 `./data` 目录。*
+
+**方法 B：直接在 macOS 本地运行（非 Docker 模式）**：
 1. **进入 usage-service 目录**：
    ```bash
    cd "$CPA_WORKSPACE/CPA-Manager/usage-service"
@@ -199,7 +220,7 @@ cd "$CPA_WORKSPACE/CPA-Manager"
    ```
    *服务启动后会监听在本地的 `18317` 端口。同时会在当前目录下创建 `config.json` 配置文件及存放 SQLite 数据库的 `./data` 目录。*
 
-**方法 B：使用 Docker 模式启动（标准 Docker Compose 部署）**：
+**方法 C：使用 Docker 模式启动（标准 Docker Compose 部署）**：
 1. **进入 CPA-Manager 目录**：
    ```bash
    cd "$CPA_WORKSPACE/CPA-Manager"
