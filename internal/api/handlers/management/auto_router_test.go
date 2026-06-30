@@ -21,7 +21,7 @@ func TestPutAutoRouterUpdatesConfig(t *testing.T) {
 	}
 	h := NewHandler(&config.Config{}, configPath, nil)
 
-	body := []byte(`{"auto-router":{"enabled":true,"models":[{"name":" auto ","fallback":{"provider":" Claude ","model":" sonnet "},"roles":[{"id":" coding ","provider":" Codex ","model":" gpt-5-codex "}]}]}}`)
+	body := []byte(`{"auto-router":{"enabled":true,"role-presets":[{"id":" Debug ","name":" Debug Preset ","match-keywords":[" Error "]}],"models":[{"name":" auto ","fallback":{"provider":" Claude ","model":" sonnet "},"roles":[{"id":" coding ","provider":" Codex ","model":" gpt-5-codex "}]}]}}`)
 	resp := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(resp)
 	c.Request = httptest.NewRequest(http.MethodPut, "/v0/management/auto-router", bytes.NewReader(body))
@@ -37,13 +37,17 @@ func TestPutAutoRouterUpdatesConfig(t *testing.T) {
 	if got := h.cfg.AutoRouter.Models[0].Roles[0].Provider; got != "codex" {
 		t.Fatalf("role provider = %q, want codex", got)
 	}
+	if got := h.cfg.AutoRouter.RolePresets[0].MatchKeywords[0]; got != "error" {
+		t.Fatalf("role preset keyword = %q, want error", got)
+	}
 }
 
 func TestGetAutoRouterReturnsWrappedConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewHandler(&config.Config{SDKConfig: config.SDKConfig{AutoRouter: config.AutoRouterConfig{
-		Enabled: true,
-		Models:  []config.AutoModelConfig{{Name: "auto"}},
+		Enabled:     true,
+		Models:      []config.AutoModelConfig{{Name: "auto"}},
+		RolePresets: []config.AutoRouterRolePresetConfig{{ID: "custom-debug", Name: "Custom Debug"}},
 	}}}, "", nil)
 	resp := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(resp)
@@ -56,6 +60,9 @@ func TestGetAutoRouterReturnsWrappedConfig(t *testing.T) {
 	}
 	if got := gjson.GetBytes(resp.Body.Bytes(), "auto-router.models.0.name").String(); got != "auto" {
 		t.Fatalf("model name = %q, want auto; body=%s", got, resp.Body.String())
+	}
+	if got := gjson.GetBytes(resp.Body.Bytes(), "auto-router.role-presets.0.id").String(); got != "custom-debug" {
+		t.Fatalf("role preset id = %q, want custom-debug; body=%s", got, resp.Body.String())
 	}
 }
 

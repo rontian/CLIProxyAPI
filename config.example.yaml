@@ -171,6 +171,22 @@ video-result-auth-cache-ttl: "3h"
 # The selected expert receives the original conversation history plus role prompt guidance when supported.
 # auto-router:
 #   enabled: true
+#   # User-defined reusable role templates. Built-in CPA-Manager presets are shipped
+#   # with CPA-Manager and are not written here.
+#   role-presets:
+#     - id: "custom-debug"
+#       name: "Custom Debug Agent"
+#       description: "Reusable debug prompt for local development."
+#       cost-tier: "high"
+#       priority: 90
+#       strengths:
+#         - "debugging"
+#         - "log analysis"
+#       match-keywords:
+#         - "stack trace"
+#         - "build failed"
+#       prompt-template: |
+#         You are a debugging assistant. Diagnose the likely root cause first.
 #   models:
 #     - name: "auto"
 #       description: "Stable role-based model router"

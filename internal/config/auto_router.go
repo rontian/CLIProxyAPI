@@ -9,8 +9,9 @@ const defaultAutoRouterSessionTTL = "30m"
 
 // AutoRouterConfig configures client-visible auto models.
 type AutoRouterConfig struct {
-	Enabled bool              `yaml:"enabled" json:"enabled"`
-	Models  []AutoModelConfig `yaml:"models" json:"models"`
+	Enabled     bool                         `yaml:"enabled" json:"enabled"`
+	Models      []AutoModelConfig            `yaml:"models" json:"models"`
+	RolePresets []AutoRouterRolePresetConfig `yaml:"role-presets,omitempty" json:"role-presets,omitempty"`
 }
 
 // AutoModelConfig describes one client-visible auto model.
@@ -65,12 +66,25 @@ type AutoRouterRoleConfig struct {
 	Disabled       bool     `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
 
+// AutoRouterRolePresetConfig stores user-defined reusable role templates.
+type AutoRouterRolePresetConfig struct {
+	ID             string   `yaml:"id" json:"id"`
+	Name           string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Description    string   `yaml:"description,omitempty" json:"description,omitempty"`
+	CostTier       string   `yaml:"cost-tier,omitempty" json:"cost-tier,omitempty"`
+	Priority       int      `yaml:"priority,omitempty" json:"priority,omitempty"`
+	Strengths      []string `yaml:"strengths,omitempty" json:"strengths,omitempty"`
+	MatchKeywords  []string `yaml:"match-keywords,omitempty" json:"match-keywords,omitempty"`
+	PromptTemplate string   `yaml:"prompt-template,omitempty" json:"prompt-template,omitempty"`
+}
+
 // SanitizeAutoRouter normalizes auto-router configuration and removes unusable entries.
 func (cfg *Config) SanitizeAutoRouter() {
 	if cfg == nil {
 		return
 	}
 	cfg.AutoRouter.Models = sanitizeAutoModels(cfg.AutoRouter.Models)
+	cfg.AutoRouter.RolePresets = sanitizeAutoRolePresets(cfg.AutoRouter.RolePresets)
 	if len(cfg.AutoRouter.Models) == 0 {
 		cfg.AutoRouter.Enabled = false
 	}
@@ -157,6 +171,30 @@ func sanitizeAutoRoles(roles []AutoRouterRoleConfig) []AutoRouterRoleConfig {
 			continue
 		}
 		out = append(out, role)
+	}
+	return out
+}
+
+func sanitizeAutoRolePresets(presets []AutoRouterRolePresetConfig) []AutoRouterRolePresetConfig {
+	out := make([]AutoRouterRolePresetConfig, 0, len(presets))
+	seen := make(map[string]struct{}, len(presets))
+	for _, preset := range presets {
+		preset.ID = strings.TrimSpace(preset.ID)
+		key := strings.ToLower(preset.ID)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		preset.Name = strings.TrimSpace(preset.Name)
+		preset.Description = strings.TrimSpace(preset.Description)
+		preset.CostTier = strings.ToLower(strings.TrimSpace(preset.CostTier))
+		preset.Strengths = trimUniqueStrings(preset.Strengths, false)
+		preset.MatchKeywords = trimUniqueStrings(preset.MatchKeywords, true)
+		preset.PromptTemplate = strings.TrimSpace(preset.PromptTemplate)
+		out = append(out, preset)
 	}
 	return out
 }

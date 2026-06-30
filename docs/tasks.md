@@ -17,7 +17,8 @@
 - [x] Add management API endpoints for auto-router config.
 - [x] Add sticky session inspection and clearing endpoints.
 - [x] Add deterministic dry-run route testing endpoint.
-- [ ] Add CPA-Manager UI for role editing and dry-run route testing.
+- [x] Add CPA-Manager UI for role editing and dry-run route testing.
+- [x] Add built-in and custom role preset management in CPA-Manager.
 
 ## V1 Validation
 

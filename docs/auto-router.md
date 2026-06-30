@@ -49,6 +49,20 @@ The selected expert receives the original conversation history. For OpenAI Chat 
 ```yaml
 auto-router:
   enabled: true
+  role-presets:
+    - id: "custom-debug"
+      name: "Custom Debug Agent"
+      description: "Reusable debug prompt for local development."
+      cost-tier: "high"
+      priority: 90
+      strengths:
+        - "debugging"
+        - "log analysis"
+      match-keywords:
+        - "stack trace"
+        - "build failed"
+      prompt-template: |
+        You are a debugging assistant. Diagnose the likely root cause first.
   models:
     - name: "auto"
       description: "Stable role-based model router"
@@ -104,6 +118,11 @@ auto-router:
             - "translation"
             - "summary"
 ```
+
+`role-presets` stores user-defined reusable role templates. Built-in CPA-Manager
+presets are shipped with CPA-Manager and are not written to `config.yaml`.
+Applying any preset copies its content into a concrete `models[].roles[]` entry;
+the role does not keep a live reference to the preset.
 
 When `brain.provider` and `brain.model` are configured, the router asks the judge model for JSON before deterministic matching. The judge may only select configured roles (or `fallback`); the concrete provider/model still comes from configuration.
 

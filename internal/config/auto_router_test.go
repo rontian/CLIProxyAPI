@@ -6,6 +6,17 @@ func TestParseConfigBytesSanitizesAutoRouter(t *testing.T) {
 	cfg, err := ParseConfigBytes([]byte(`
 auto-router:
   enabled: true
+  role-presets:
+    - id: " Debug "
+      name: " Debug Preset "
+      cost-tier: " HIGH "
+      strengths: [" Logs ", "Logs"]
+      match-keywords: [" Error ", "error"]
+      prompt-template: " diagnose "
+    - id: "debug"
+      name: "duplicate"
+    - id: ""
+      name: "ignored"
   models:
     - name: " auto "
       default-role: " coding "
@@ -48,5 +59,18 @@ auto-router:
 	}
 	if len(model.Roles) != 1 || model.Roles[0].Provider != "codex" || model.Roles[0].MatchKeywords[0] != "docker" {
 		t.Fatalf("roles = %+v, want sanitized coding role", model.Roles)
+	}
+	if len(cfg.AutoRouter.RolePresets) != 1 {
+		t.Fatalf("role presets = %+v, want one unique preset", cfg.AutoRouter.RolePresets)
+	}
+	preset := cfg.AutoRouter.RolePresets[0]
+	if preset.ID != "Debug" || preset.Name != "Debug Preset" || preset.CostTier != "high" {
+		t.Fatalf("preset = %+v, want sanitized metadata", preset)
+	}
+	if len(preset.MatchKeywords) != 1 || preset.MatchKeywords[0] != "error" {
+		t.Fatalf("preset match keywords = %v, want normalized unique keyword", preset.MatchKeywords)
+	}
+	if preset.PromptTemplate != "diagnose" {
+		t.Fatalf("preset prompt = %q, want trimmed prompt", preset.PromptTemplate)
 	}
 }
