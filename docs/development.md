@@ -207,7 +207,7 @@ cd "$CPA_WORKSPACE/CPA-Manager"
    ```bash
    make dev-usage
    ```
-   *服务启动后会监听在本地的 `18317` 端口。同时会在 `usage-service` 目录下创建 `config.json` 配置文件及存放 SQLite 数据库的 `./data` 目录。*
+   *服务启动后会监听在本地的 `18317` 端口。通过 Makefile 启动时，`config.json` 和 SQLite `data/` 目录会统一放在 `CPA-Manager` 仓库根目录。*
 
 **方法 B：直接在 macOS 本地运行（非 Docker 模式）**：
 1. **进入 usage-service 目录**：
@@ -218,7 +218,7 @@ cd "$CPA_WORKSPACE/CPA-Manager"
    ```bash
    CPA_MANAGER_CONFIG=./config.json go run ./cmd/cpa-manager
    ```
-   *服务启动后会监听在本地的 `18317` 端口。同时会在当前目录下创建 `config.json` 配置文件及存放 SQLite 数据库的 `./data` 目录。*
+   *服务启动后会监听在本地的 `18317` 端口。该手动方式会在当前 `usage-service` 目录下创建 `config.json` 和 `./data`；如果也想统一到仓库根目录，请使用 `CPA_MANAGER_CONFIG=../config.json go run ./cmd/cpa-manager`。*
 
 **方法 C：使用 Docker 模式启动（标准 Docker Compose 部署）**：
 1. **进入 CPA-Manager 目录**：
