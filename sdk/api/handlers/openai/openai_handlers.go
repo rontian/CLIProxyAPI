@@ -79,7 +79,40 @@ func (h *OpenAIAPIHandler) HandlerType() string {
 func (h *OpenAIAPIHandler) Models() []map[string]any {
 	// Get dynamic models from the global registry
 	modelRegistry := registry.GetGlobalRegistry()
-	return modelRegistry.GetAvailableModels("openai")
+	return appendAutoRouterModels(modelRegistry.GetAvailableModels("openai"), h.Cfg)
+}
+
+func appendAutoRouterModels(models []map[string]any, cfg *config.SDKConfig) []map[string]any {
+	if cfg == nil || !cfg.AutoRouter.Enabled || len(cfg.AutoRouter.Models) == 0 {
+		return models
+	}
+	seen := make(map[string]struct{}, len(models)+len(cfg.AutoRouter.Models))
+	for _, model := range models {
+		if id, _ := model["id"].(string); id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	out := append([]map[string]any(nil), models...)
+	for _, model := range cfg.AutoRouter.Models {
+		if model.Name == "" {
+			continue
+		}
+		if _, exists := seen[model.Name]; exists {
+			continue
+		}
+		seen[model.Name] = struct{}{}
+		out = append(out, map[string]any{
+			"id":           model.Name,
+			"object":       "model",
+			"created":      int64(0),
+			"owned_by":     "auto-router",
+			"display_name": model.Name,
+			"name":         model.Name,
+			"type":         "chat",
+			"description":  model.Description,
+		})
+	}
+	return out
 }
 
 // OpenAIModels handles the /v1/models endpoint.

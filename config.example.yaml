@@ -166,6 +166,66 @@ video-result-auth-cache-ttl: "3h"
 #   - "cogvideo"
 #   - "agnes"
 
+# Built-in auto model router.
+# This exposes client-visible models such as "auto" and routes them to one configured role model.
+# The selected expert receives the original conversation history plus role prompt guidance when supported.
+# auto-router:
+#   enabled: true
+#   models:
+#     - name: "auto"
+#       description: "Stable role-based model router"
+#       default-role: "fast"
+#       fallback:
+#         provider: "claude"
+#         model: "claude-sonnet-4-5"
+#       # Optional model-backed judge. It must return a configured role ID or "fallback".
+#       brain:
+#         provider: "gemini"
+#         model: "gemini-2.5-flash"
+#         temperature: 0
+#         max-tokens: 512
+#       session:
+#         enabled: true
+#         ttl: "30m"
+#         switch-threshold: 0.85
+#         max-switches: 3
+#         switch-keywords:
+#           - "new task"
+#           - "new topic"
+#           - "switch to"
+#         key-sources:
+#           - "metadata.execution_session_id"
+#           - "headers.x-session-id"
+#           - "body.metadata.user_id"
+#           - "history-hash"
+#       roles:
+#         - id: "coding"
+#           name: "Coding Agent"
+#           provider: "codex"
+#           model: "gpt-5-codex"
+#           cost-tier: "high"
+#           priority: 100
+#           strengths:
+#             - "code editing"
+#             - "debugging"
+#             - "repo analysis"
+#           match-keywords:
+#             - "stack trace"
+#             - "docker"
+#             - "go test"
+#           prompt-template: |
+#             You are a senior coding assistant. Focus on implementation correctness.
+#         - id: "fast"
+#           name: "Fast Agent"
+#           provider: "gemini"
+#           model: "gemini-2.5-flash"
+#           cost-tier: "low"
+#           priority: 10
+#           strengths:
+#             - "short Q&A"
+#             - "translation"
+#             - "summary"
+
 
 # Core auth auto-refresh worker pool size (OAuth/file-based auth token refresh).
 # When > 0, overrides the default worker count (16).

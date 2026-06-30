@@ -11,6 +11,12 @@ type SDKConfig = internalconfig.SDKConfig
 type Config = internalconfig.Config
 
 type StreamingConfig = internalconfig.StreamingConfig
+type AutoRouterConfig = internalconfig.AutoRouterConfig
+type AutoModelConfig = internalconfig.AutoModelConfig
+type AutoRouteTargetConfig = internalconfig.AutoRouteTargetConfig
+type AutoRouterBrainConfig = internalconfig.AutoRouterBrainConfig
+type AutoRouterSessionConfig = internalconfig.AutoRouterSessionConfig
+type AutoRouterRoleConfig = internalconfig.AutoRouterRoleConfig
 type TLSConfig = internalconfig.TLSConfig
 type RemoteManagement = internalconfig.RemoteManagement
 type OAuthModelAlias = internalconfig.OAuthModelAlias

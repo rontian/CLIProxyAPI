@@ -148,18 +148,6 @@ func isXAIVideosModel(model string) bool {
 	prefix, baseModel := imagesModelParts(model)
 	baseModel = strings.ToLower(strings.TrimSpace(baseModel))
 
-	// Heuristics for third-party video models
-	keywords := []string{"video", "vid", "sora", "cogvideo", "kling", "luma", "runway", "minimax"}
-	cfg := GetActiveSDKConfig()
-	if cfg != nil {
-		keywords = append(keywords, cfg.CustomVideoModelKeywords...)
-	}
-	for _, kw := range keywords {
-		if kw != "" && strings.Contains(baseModel, strings.ToLower(strings.TrimSpace(kw))) {
-			return true
-		}
-	}
-
 	if baseModel != defaultXAIVideosModel && baseModel != xaiVideos15PreviewModel {
 		return false
 	}
@@ -171,11 +159,16 @@ func isXAIVideosModel(model string) bool {
 func isSoraVideosModel(model string) bool {
 	_, baseModel := imagesModelParts(model)
 	baseModel = strings.ToLower(strings.TrimSpace(baseModel))
+	if (baseModel == defaultXAIVideosModel || baseModel == xaiVideos15PreviewModel) && !isXAIVideosModel(model) {
+		return false
+	}
 	if baseModel == defaultOpenAIVideosModel || strings.HasPrefix(baseModel, defaultOpenAIVideosModel+"-") {
 		return true
 	}
-	// Heuristics for third-party video models
-	keywords := []string{"video", "vid", "sora", "cogvideo", "kling", "luma", "runway", "minimax"}
+	// Heuristics for known OpenAI-wrapper video model families. Generic words like
+	// "video" are intentionally left to custom-video-model-keywords to avoid
+	// accepting placeholders such as "not-a-video-model".
+	keywords := []string{"sora", "cogvideo", "kling", "luma", "runway", "minimax"}
 	cfg := GetActiveSDKConfig()
 	if cfg != nil {
 		keywords = append(keywords, cfg.CustomVideoModelKeywords...)
@@ -220,14 +213,14 @@ func rejectUnsupportedNativeVideosModel(c *gin.Context, model string) bool {
 }
 
 func canonicalXAIVideosModel(model string) string {
-	if isSoraVideosModel(model) {
-		return defaultXAIVideosModel
-	}
 	switch videosModelBase(model) {
 	case defaultXAIVideosModel:
 		return defaultXAIVideosModel
 	case xaiVideos15PreviewModel:
 		return xaiVideos15PreviewModel
+	}
+	if isSoraVideosModel(model) {
+		return defaultXAIVideosModel
 	}
 	return defaultXAIVideosModel
 }

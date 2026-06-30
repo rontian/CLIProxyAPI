@@ -236,8 +236,13 @@ func isOpenAICompatImagesModel(model string) bool {
 	if info != nil && info.Type == registry.OpenAIImageModelType {
 		return true
 	}
+	prefix, baseModel := imagesModelParts(model)
+	baseModel = strings.ToLower(strings.TrimSpace(baseModel))
+	if (baseModel == defaultXAIImagesModel || baseModel == xaiImagesQualityModel) && !isXAIImagesModel(model) {
+		return false
+	}
 	// Heuristics: check name keywords for custom/third-party image models
-	lower := strings.ToLower(model)
+	lower := strings.ToLower(strings.TrimSpace(prefix + "/" + baseModel))
 	keywords := []string{"image", "imagine", "dall-e", "flux", "sdxl", "stable-diffusion", "midjourney", "paint", "draw", "playground", "imagen"}
 	cfg := GetActiveSDKConfig()
 	if cfg != nil {

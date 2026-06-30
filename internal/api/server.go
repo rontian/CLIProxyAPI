@@ -335,6 +335,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
 	s.mgmt.SetPluginHost(optionState.pluginHost)
+	s.mgmt.SetAutoRouter(s.handlers.AutoRouter)
 	s.mgmt.SetConfigReloadHook(optionState.configReloadHook)
 	if optionState.localPassword != "" {
 		s.mgmt.SetLocalPassword(optionState.localPassword)
@@ -605,6 +606,13 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/config", s.mgmt.GetConfig)
 		mgmt.GET("/config.yaml", s.mgmt.GetConfigYAML)
 		mgmt.PUT("/config.yaml", s.mgmt.PutConfigYAML)
+		mgmt.GET("/auto-router", s.mgmt.GetAutoRouter)
+		mgmt.PUT("/auto-router", s.mgmt.PutAutoRouter)
+		mgmt.PATCH("/auto-router", s.mgmt.PutAutoRouter)
+		mgmt.DELETE("/auto-router", s.mgmt.DeleteAutoRouter)
+		mgmt.GET("/auto-router/sessions", s.mgmt.GetAutoRouterSessions)
+		mgmt.DELETE("/auto-router/sessions", s.mgmt.DeleteAutoRouterSessions)
+		mgmt.POST("/auto-router/dry-run", s.mgmt.PostAutoRouterDryRun)
 		mgmt.GET("/latest-version", s.mgmt.GetLatestVersion)
 		mgmt.GET("/plugins", s.mgmt.ListPlugins)
 		mgmt.GET("/plugin-store", s.mgmt.ListPluginStore)
@@ -1698,6 +1706,7 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 		s.mgmt.SetConfig(cfg)
 		s.mgmt.SetAuthManager(s.handlers.AuthManager)
 		s.mgmt.SetPluginHost(s.pluginHost)
+		s.mgmt.SetAutoRouter(s.handlers.AutoRouter)
 	}
 	s.refreshPluginManagementRoutes()
 

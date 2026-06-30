@@ -20,6 +20,9 @@ type modelExecutionOptions struct {
 	InternalSource          bool
 	SkipInterceptorPluginID string
 	SkipRouterPluginID      string
+	SkipModelRouters        bool
+	ForcedProvider          string
+	ForcedModel             string
 }
 
 // ModelExecutionRequest describes an internal model execution request.
@@ -170,6 +173,24 @@ func addModelExecutionSourceMetadata(meta map[string]any, internalSource bool) {
 		return
 	}
 	meta[modelExecutionMetadataSourceKey] = modelExecutionInternalSource
+}
+
+func addAutoRouteMetadata(meta map[string]any, decision modelRouteDecision) {
+	if meta == nil || decision.Provider == "" {
+		return
+	}
+	if decision.RoleID != "" {
+		meta[autoRouteRoleMetadataKey] = decision.RoleID
+	}
+	if decision.Reason != "" {
+		meta[autoRouteReasonMetadataKey] = decision.Reason
+	}
+	if decision.Brain {
+		meta[autoRouteBrainMetadataKey] = true
+	}
+	if decision.Sticky {
+		meta[autoRouteStickyMetadataKey] = true
+	}
 }
 
 func prepareModelExecutionStream(ctx context.Context, dataChan <-chan []byte, errChan <-chan *interfaces.ErrorMessage) (<-chan ModelExecutionChunk, *interfaces.ErrorMessage) {

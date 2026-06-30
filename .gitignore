@@ -30,6 +30,9 @@ auths/*
 
 # Documentation
 docs/*
+!docs/auto-router.md
+!docs/project.md
+!docs/tasks.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md

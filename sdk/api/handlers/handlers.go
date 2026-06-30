@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/autorouter"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
@@ -51,6 +52,12 @@ type ErrorDetail struct {
 }
 
 const idempotencyKeyMetadataKey = "idempotency_key"
+const (
+	autoRouteRoleMetadataKey   = "auto_route_role"
+	autoRouteReasonMetadataKey = "auto_route_reason"
+	autoRouteBrainMetadataKey  = "auto_route_brain"
+	autoRouteStickyMetadataKey = "auto_route_sticky"
+)
 
 const (
 	defaultStreamingKeepAliveSeconds = 0
@@ -409,6 +416,9 @@ type BaseAPIHandler struct {
 	// ModelRouterHost optionally routes matching requests to a plugin executor, the router's own
 	// executor, or a built-in provider before model-to-provider resolution and auth selection.
 	ModelRouterHost PluginModelRouterHost
+
+	// AutoRouter handles built-in client-visible auto models before plugin/provider routing.
+	AutoRouter *autorouter.Router
 }
 
 // NewBaseAPIHandlers creates a new API handlers instance.
@@ -424,6 +434,7 @@ func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager) *B
 	return &BaseAPIHandler{
 		Cfg:         cfg,
 		AuthManager: authManager,
+		AutoRouter:  autorouter.New(cfg),
 	}
 }
 
@@ -437,6 +448,11 @@ var OnConfigUpdate func(cfg *config.SDKConfig)
 //   - cfg: The new application configuration
 func (h *BaseAPIHandler) UpdateClients(cfg *config.SDKConfig) {
 	h.Cfg = cfg
+	if h.AutoRouter == nil {
+		h.AutoRouter = autorouter.New(cfg)
+	} else {
+		h.AutoRouter.UpdateConfig(cfg)
+	}
 	if OnConfigUpdate != nil {
 		OnConfigUpdate(cfg)
 	}
@@ -578,7 +594,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
 		if c != nil {
 			logging.SetResponseStatus(cancelCtx, c.Writer.Status())
 		}
-		if h.Cfg.RequestLog && len(params) == 1 {
+		if h != nil && h.Cfg != nil && h.Cfg.RequestLog && len(params) == 1 {
 			if captured, exists := c.Get(logging.APIResponseCapturedContextKey); exists {
 				if capturedBool, ok := captured.(bool); ok && capturedBool {
 					cancel()
@@ -716,6 +732,7 @@ func (h *BaseAPIHandler) executeWithAuthManager(ctx context.Context, handlerType
 func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entryProtocol, exitProtocol, modelName string, rawJSON []byte, alt string, allowImageModel bool, execOptions modelExecutionOptions) ([]byte, http.Header, *interfaces.ErrorMessage) {
 	originalRequestedModel := modelName
 	routeDecision := h.applyModelRouter(ctx, entryProtocol, modelName, rawJSON, false, execOptions)
+	routeDecision = forcedModelRouteDecision(routeDecision, execOptions)
 	responseProtocol := modelExecutionResponseProtocol(entryProtocol, exitProtocol)
 	if routeDecision.ExecutorPluginID != "" {
 		return h.executeWithPluginExecutor(ctx, entryProtocol, responseProtocol, modelName, originalRequestedModel, rawJSON, alt, routeDecision.ExecutorPluginID, execOptions)
@@ -727,9 +744,10 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = originalRequestedModel
 	addModelExecutionSourceMetadata(reqMeta, execOptions.InternalSource)
-	setReasoningEffortMetadata(reqMeta, entryProtocol, normalizedModel, rawJSON)
-	setServiceTierMetadata(reqMeta, rawJSON)
-	payload := rawJSON
+	addAutoRouteMetadata(reqMeta, routeDecision)
+	payload := applyAutoRoutePromptTemplate(entryProtocol, rawJSON, routeDecision)
+	setReasoningEffortMetadata(reqMeta, entryProtocol, normalizedModel, payload)
+	setServiceTierMetadata(reqMeta, payload)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -783,6 +801,7 @@ func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handle
 func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handlerType, modelName string, rawJSON []byte, alt string, execOptions modelExecutionOptions) ([]byte, http.Header, *interfaces.ErrorMessage) {
 	originalRequestedModel := modelName
 	routeDecision := h.applyModelRouter(ctx, handlerType, modelName, rawJSON, false, execOptions)
+	routeDecision = forcedModelRouteDecision(routeDecision, execOptions)
 	if routeDecision.ExecutorPluginID != "" {
 		return h.countWithPluginExecutor(ctx, handlerType, modelName, originalRequestedModel, rawJSON, alt, routeDecision.ExecutorPluginID, execOptions)
 	}
@@ -792,9 +811,10 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = originalRequestedModel
-	setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
-	setServiceTierMetadata(reqMeta, rawJSON)
-	payload := rawJSON
+	addAutoRouteMetadata(reqMeta, routeDecision)
+	payload := applyAutoRoutePromptTemplate(handlerType, rawJSON, routeDecision)
+	setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, payload)
+	setServiceTierMetadata(reqMeta, payload)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -1103,6 +1123,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManager(ctx context.Context, handl
 func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context, entryProtocol, exitProtocol, modelName string, rawJSON []byte, alt string, allowImageModel bool, execOptions modelExecutionOptions) (<-chan []byte, http.Header, <-chan *interfaces.ErrorMessage) {
 	originalRequestedModel := modelName
 	routeDecision := h.applyModelRouter(ctx, entryProtocol, modelName, rawJSON, true, execOptions)
+	routeDecision = forcedModelRouteDecision(routeDecision, execOptions)
 	responseProtocol := modelExecutionResponseProtocol(entryProtocol, exitProtocol)
 	if routeDecision.ExecutorPluginID != "" {
 		return h.streamWithPluginExecutor(ctx, entryProtocol, responseProtocol, modelName, originalRequestedModel, rawJSON, alt, routeDecision.ExecutorPluginID, execOptions)
@@ -1117,9 +1138,10 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = originalRequestedModel
 	addModelExecutionSourceMetadata(reqMeta, execOptions.InternalSource)
-	setReasoningEffortMetadata(reqMeta, entryProtocol, normalizedModel, rawJSON)
-	setServiceTierMetadata(reqMeta, rawJSON)
-	payload := rawJSON
+	addAutoRouteMetadata(reqMeta, routeDecision)
+	payload := applyAutoRoutePromptTemplate(entryProtocol, rawJSON, routeDecision)
+	setReasoningEffortMetadata(reqMeta, entryProtocol, normalizedModel, payload)
+	setServiceTierMetadata(reqMeta, payload)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -1731,6 +1753,11 @@ type modelRouteDecision struct {
 	ExecutorPluginID string
 	Provider         string
 	Model            string
+	RoleID           string
+	Reason           string
+	PromptTemplate   string
+	Brain            bool
+	Sticky           bool
 }
 
 func routeModel(ctx context.Context, host PluginModelRouterHost, req pluginapi.ModelRouteRequest, skipPluginID string) (pluginapi.ModelRouteResponse, bool) {
@@ -1745,6 +1772,17 @@ func routeModel(ctx context.Context, host PluginModelRouterHost, req pluginapi.M
 		return pluginapi.ModelRouteResponse{}, false
 	}
 	return host.RouteModel(ctx, req)
+}
+
+func forcedModelRouteDecision(decision modelRouteDecision, execOptions modelExecutionOptions) modelRouteDecision {
+	provider := strings.ToLower(strings.TrimSpace(execOptions.ForcedProvider))
+	if provider == "" {
+		return decision
+	}
+	return modelRouteDecision{
+		Provider: provider,
+		Model:    strings.TrimSpace(execOptions.ForcedModel),
+	}
 }
 
 func modelRoutersEnabled(host PluginModelRouterHost, skipPluginID string) bool {
@@ -1770,13 +1808,36 @@ func modelRoutersEnabled(host PluginModelRouterHost, skipPluginID string) bool {
 
 func (h *BaseAPIHandler) applyModelRouter(ctx context.Context, handlerType, modelName string, rawJSON []byte, stream bool, execOptions modelExecutionOptions) modelRouteDecision {
 	var decision modelRouteDecision
+	meta := requestExecutionMetadata(ctx)
+	meta[coreexecutor.RequestedModelMetadataKey] = modelName
+	addModelExecutionSourceMetadata(meta, execOptions.InternalSource)
+	if execOptions.SkipModelRouters {
+		return decision
+	}
+	if h != nil && h.AutoRouter != nil {
+		if autoDecision, ok := h.AutoRouter.RouteWithJudge(ctx, autorouter.Request{
+			SourceFormat:   handlerType,
+			RequestedModel: modelName,
+			Stream:         stream,
+			Headers:        modelExecutionHeaders(ctx, execOptions.Headers),
+			Query:          modelExecutionQuery(ctx, execOptions.Query),
+			Body:           cloneBytes(rawJSON),
+			Metadata:       meta,
+		}, h.autoRouterJudge); ok {
+			decision.Provider = strings.ToLower(strings.TrimSpace(autoDecision.Provider))
+			decision.Model = strings.TrimSpace(autoDecision.Model)
+			decision.RoleID = strings.TrimSpace(autoDecision.RoleID)
+			decision.Reason = strings.TrimSpace(autoDecision.Reason)
+			decision.PromptTemplate = strings.TrimSpace(autoDecision.PromptTemplate)
+			decision.Brain = autoDecision.Brain
+			decision.Sticky = autoDecision.Sticky
+			return decision
+		}
+	}
 	host := h.modelRouterHost()
 	if host == nil || !modelRoutersEnabled(host, execOptions.SkipRouterPluginID) {
 		return decision
 	}
-	meta := requestExecutionMetadata(ctx)
-	meta[coreexecutor.RequestedModelMetadataKey] = modelName
-	addModelExecutionSourceMetadata(meta, execOptions.InternalSource)
 	resp, ok := routeModel(ctx, host, pluginapi.ModelRouteRequest{
 		SourceFormat:   handlerType,
 		RequestedModel: modelName,
@@ -1797,6 +1858,219 @@ func (h *BaseAPIHandler) applyModelRouter(ctx context.Context, handlerType, mode
 		decision.Model = strings.TrimSpace(resp.TargetModel)
 	}
 	return decision
+}
+
+func applyAutoRoutePromptTemplate(protocol string, rawJSON []byte, decision modelRouteDecision) []byte {
+	prompt := strings.TrimSpace(decision.PromptTemplate)
+	if prompt == "" || len(rawJSON) == 0 {
+		return rawJSON
+	}
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "openai":
+		return prependOpenAIChatSystemMessage(rawJSON, prompt)
+	case "openai-response":
+		return prependResponsesInstructions(rawJSON, prompt)
+	default:
+		return rawJSON
+	}
+}
+
+func prependOpenAIChatSystemMessage(rawJSON []byte, prompt string) []byte {
+	var body map[string]any
+	if err := json.Unmarshal(rawJSON, &body); err != nil {
+		return rawJSON
+	}
+	rawMessages, ok := body["messages"].([]any)
+	if !ok {
+		return rawJSON
+	}
+	messages := make([]any, 0, len(rawMessages)+1)
+	messages = append(messages, map[string]any{
+		"role":    "system",
+		"content": prompt,
+	})
+	messages = append(messages, rawMessages...)
+	body["messages"] = messages
+	data, err := json.Marshal(body)
+	if err != nil {
+		return rawJSON
+	}
+	return data
+}
+
+func prependResponsesInstructions(rawJSON []byte, prompt string) []byte {
+	var body map[string]any
+	if err := json.Unmarshal(rawJSON, &body); err != nil {
+		return rawJSON
+	}
+	if existing, ok := body["instructions"].(string); ok && strings.TrimSpace(existing) != "" {
+		body["instructions"] = prompt + "\n\n" + existing
+	} else {
+		body["instructions"] = prompt
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return rawJSON
+	}
+	return data
+}
+
+func (h *BaseAPIHandler) autoRouterJudge(ctx context.Context, req autorouter.BrainRequest) (autorouter.BrainDecision, error) {
+	if h == nil || h.AuthManager == nil {
+		return autorouter.BrainDecision{}, fmt.Errorf("auto-router brain requires an auth manager")
+	}
+	brain := req.AutoModel.Brain
+	provider := strings.ToLower(strings.TrimSpace(brain.Provider))
+	model := strings.TrimSpace(brain.Model)
+	if provider == "" || model == "" {
+		return autorouter.BrainDecision{}, fmt.Errorf("auto-router brain provider/model is not configured")
+	}
+
+	payload, errPayload := buildAutoRouterJudgePayload(req)
+	if errPayload != nil {
+		return autorouter.BrainDecision{}, errPayload
+	}
+	body, _, errMsg := h.executeWithAuthManagerFormats(ctx, "openai", "openai", model, payload, "", false, modelExecutionOptions{
+		InternalSource:   true,
+		SkipModelRouters: true,
+		ForcedProvider:   provider,
+		ForcedModel:      model,
+	})
+	if errMsg != nil {
+		if errMsg.Error != nil {
+			return autorouter.BrainDecision{}, errMsg.Error
+		}
+		return autorouter.BrainDecision{}, fmt.Errorf("auto-router brain execution failed")
+	}
+	return parseAutoRouterJudgeResponse(body)
+}
+
+func buildAutoRouterJudgePayload(req autorouter.BrainRequest) ([]byte, error) {
+	brain := req.AutoModel.Brain
+	systemPrompt := strings.TrimSpace(brain.PromptTemplate)
+	if systemPrompt == "" {
+		systemPrompt = defaultAutoRouterJudgePrompt()
+	}
+	userPrompt := buildAutoRouterJudgeUserPrompt(req)
+	payload := map[string]any{
+		"model":       strings.TrimSpace(brain.Model),
+		"temperature": brain.Temperature,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userPrompt},
+		},
+	}
+	if brain.MaxTokens > 0 {
+		payload["max_tokens"] = brain.MaxTokens
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal auto-router brain payload: %w", err)
+	}
+	return data, nil
+}
+
+func defaultAutoRouterJudgePrompt() string {
+	return strings.Join([]string{
+		"You are a routing controller for an AI model gateway.",
+		"Choose exactly one configured role for the current request.",
+		"Consider the conversation history in the request body, especially follow-up turns.",
+		"Prefer keeping the same task family when the latest user message is a continuation.",
+		"Return JSON only with fields: role_id, confidence, reason.",
+		"Do not answer the user.",
+	}, "\n")
+}
+
+func buildAutoRouterJudgeUserPrompt(req autorouter.BrainRequest) string {
+	var b strings.Builder
+	b.WriteString("Auto model: ")
+	b.WriteString(req.AutoModel.Name)
+	b.WriteString("\n\nRoles:\n")
+	for _, role := range req.AutoModel.Roles {
+		if role.Disabled {
+			continue
+		}
+		b.WriteString("- id: ")
+		b.WriteString(role.ID)
+		if role.Name != "" {
+			b.WriteString("\n  name: ")
+			b.WriteString(role.Name)
+		}
+		if role.Description != "" {
+			b.WriteString("\n  description: ")
+			b.WriteString(role.Description)
+		}
+		if len(role.Strengths) > 0 {
+			b.WriteString("\n  strengths: ")
+			b.WriteString(strings.Join(role.Strengths, ", "))
+		}
+		if role.CostTier != "" {
+			b.WriteString("\n  cost_tier: ")
+			b.WriteString(role.CostTier)
+		}
+		b.WriteString("\n")
+	}
+	if req.AutoModel.Fallback.Provider != "" && req.AutoModel.Fallback.Model != "" {
+		b.WriteString("- id: fallback\n  description: fallback target when no role fits\n")
+	}
+	b.WriteString("\nRequest body JSON:\n")
+	body := strings.TrimSpace(string(req.Request.Body))
+	const maxJudgeBodyBytes = 12000
+	if len(body) > maxJudgeBodyBytes {
+		body = body[len(body)-maxJudgeBodyBytes:]
+		b.WriteString("[truncated to latest bytes]\n")
+	}
+	b.WriteString(body)
+	return b.String()
+}
+
+func parseAutoRouterJudgeResponse(body []byte) (autorouter.BrainDecision, error) {
+	content := strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String())
+	if content == "" {
+		content = strings.TrimSpace(gjson.GetBytes(body, "output_text").String())
+	}
+	if content == "" {
+		content = strings.TrimSpace(string(body))
+	}
+	rawJSON := extractJSONObject(content)
+	if rawJSON == "" {
+		return autorouter.BrainDecision{}, fmt.Errorf("auto-router brain returned no JSON decision")
+	}
+	result := gjson.Parse(rawJSON)
+	roleID := strings.TrimSpace(result.Get("role_id").String())
+	if roleID == "" {
+		roleID = strings.TrimSpace(result.Get("role").String())
+	}
+	if roleID == "" {
+		return autorouter.BrainDecision{}, fmt.Errorf("auto-router brain decision missing role_id")
+	}
+	return autorouter.BrainDecision{
+		RoleID:     roleID,
+		Provider:   strings.TrimSpace(result.Get("target_provider").String()),
+		Model:      strings.TrimSpace(result.Get("target_model").String()),
+		Confidence: result.Get("confidence").Float(),
+		Reason:     strings.TrimSpace(result.Get("reason").String()),
+	}, nil
+}
+
+func extractJSONObject(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	if json.Valid([]byte(content)) {
+		return content
+	}
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	candidate := strings.TrimSpace(content[start : end+1])
+	if !json.Valid([]byte(candidate)) {
+		return ""
+	}
+	return candidate
 }
 
 func streamInterceptorsEnabled(host PluginInterceptorHost) bool {
