@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"os"
@@ -48,6 +49,16 @@ import (
 )
 
 const oauthCallbackSuccessHTML = `<html><head><meta charset="utf-8"><title>Authentication successful</title><script>setTimeout(function(){window.close();},5000);</script></head><body><h1>Authentication successful!</h1><p>You can close this window.</p><p>This window will close automatically in 5 seconds.</p></body></html>`
+const oauthCallbackErrorHTML = `<html><head><meta charset="utf-8"><title>Authentication callback failed</title></head><body><h1>Authentication callback failed</h1><p>%s</p><p>Please return to CPA-Manager and retry login.</p></body></html>`
+
+func writeOAuthCallbackError(c *gin.Context, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "Authentication callback failed"
+	}
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusInternalServerError, fmt.Sprintf(oauthCallbackErrorHTML, html.EscapeString(message)))
+}
 
 var corsExposedResponseHeaders = []string{
 	"X-CPA-VERSION",
@@ -498,8 +509,14 @@ func (s *Server) setupRoutes() {
 		if errStr == "" {
 			errStr = c.Query("error_description")
 		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "anthropic", state, code, errStr)
+		if state == "" {
+			writeOAuthCallbackError(c, "missing oauth state")
+			return
+		}
+		if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "anthropic", state, code, errStr); errWrite != nil {
+			log.WithError(errWrite).WithField("provider", "anthropic").Warn("failed to persist oauth callback")
+			writeOAuthCallbackError(c, errWrite.Error())
+			return
 		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, oauthCallbackSuccessHTML)
@@ -512,8 +529,14 @@ func (s *Server) setupRoutes() {
 		if errStr == "" {
 			errStr = c.Query("error_description")
 		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "codex", state, code, errStr)
+		if state == "" {
+			writeOAuthCallbackError(c, "missing oauth state")
+			return
+		}
+		if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "codex", state, code, errStr); errWrite != nil {
+			log.WithError(errWrite).WithField("provider", "codex").Warn("failed to persist oauth callback")
+			writeOAuthCallbackError(c, errWrite.Error())
+			return
 		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, oauthCallbackSuccessHTML)
@@ -526,8 +549,14 @@ func (s *Server) setupRoutes() {
 		if errStr == "" {
 			errStr = c.Query("error_description")
 		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "antigravity", state, code, errStr)
+		if state == "" {
+			writeOAuthCallbackError(c, "missing oauth state")
+			return
+		}
+		if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "antigravity", state, code, errStr); errWrite != nil {
+			log.WithError(errWrite).WithField("provider", "antigravity").Warn("failed to persist oauth callback")
+			writeOAuthCallbackError(c, errWrite.Error())
+			return
 		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, oauthCallbackSuccessHTML)
@@ -540,8 +569,14 @@ func (s *Server) setupRoutes() {
 		if errStr == "" {
 			errStr = c.Query("error_description")
 		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "xai", state, code, errStr)
+		if state == "" {
+			writeOAuthCallbackError(c, "missing oauth state")
+			return
+		}
+		if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "xai", state, code, errStr); errWrite != nil {
+			log.WithError(errWrite).WithField("provider", "xai").Warn("failed to persist oauth callback")
+			writeOAuthCallbackError(c, errWrite.Error())
+			return
 		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, oauthCallbackSuccessHTML)

@@ -8,6 +8,10 @@
 - [x] Use typed Chinese commit messages for future local-extension work.
 - [x] Add Python-free config sync path for production hosts.
 
+## OAuth Login Reliability
+
+- [x] Report callback persistence failures instead of always showing OAuth success.
+
 ## V1 Stable Router
 
 - [x] Add auto-router config schema.
