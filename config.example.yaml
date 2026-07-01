@@ -79,6 +79,20 @@ plugins:
       config2: "string"
       config3: 3
       mode: "safe" # enum example: safe, fast
+    # github-copilot:
+    #   enabled: false
+    #   priority: 10
+    #   client-id: "Iv1.b507a08c87ecfe98"
+    #   github-base-url: "https://github.com"
+    #   github-api-base-url: "https://api.github.com"
+    #   copilot-api-base-url: "https://api.githubcopilot.com"
+    #   editor-version: "vscode/1.104.0"
+    #   editor-plugin-version: "copilot-chat/0.30.0"
+    #   user-agent: "GitHubCopilotChat/0.30.0"
+    #   models:
+    #     - "gpt-4.1"
+    #     - "gpt-4o"
+    #     - "claude-sonnet-4"
 
 # When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency.
 commercial-mode: false

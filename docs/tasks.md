@@ -48,3 +48,11 @@
 - [ ] Add cost, step, and timeout limits.
 - [ ] Add interruption/resume semantics.
 - [ ] Add CPA-Manager runtime trace viewer.
+
+## GitHub Copilot Provider Plugin
+
+- [x] Document the GitHub Copilot provider boundary and plugin-based implementation approach.
+- [x] Add a dynamic `github-copilot` provider plugin with device login, token refresh, model metadata, and chat-completions execution.
+- [x] Route plugin HTTP traffic through host callbacks so proxy config and request logging still apply.
+- [x] Add example plugin config and build/run instructions.
+- [x] Validate plugin build and core server compile.
