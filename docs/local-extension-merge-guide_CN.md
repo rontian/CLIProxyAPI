@@ -80,10 +80,10 @@ go test ./internal/api ./internal/runtime/executor ./internal/translator/...
 如果本次冲突涉及 GitHub Copilot 插件，还应至少验证插件可编译：
 
 ```bash
-go build -buildmode=c-shared -o /tmp/github-copilot-plugin.dylib ./plugins-src/github-copilot/go
+make build-copilot-plugin
 ```
 
-Linux 环境可把输出后缀替换为 `.so`。
+该命令会按当前 `GOOS/GOARCH` 输出到 `plugins/<GOOS>/<GOARCH>/`。Docker 源码构建还需要确认镜像内 `/CLIProxyAPI/plugins/` 已包含对应 Linux 插件。
 
 `go test ./...` 仍应作为最终目标；如果存在已知非本次引入的失败，需要在合并记录中说明。
 

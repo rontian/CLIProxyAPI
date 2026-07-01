@@ -25,6 +25,9 @@ ARG BUILD_DATE=unknown
 RUN if [ "$BUILD_DATE" = "unknown" ] || [ -z "$BUILD_DATE" ]; then BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ'); fi && \
     CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/
 
+RUN mkdir -p ./plugins/linux/$(go env GOARCH) && \
+    CGO_ENABLED=1 GOOS=linux go build -buildmode=c-shared -o ./plugins/linux/$(go env GOARCH)/github-copilot.so ./plugins-src/github-copilot/go
+
 
 FROM debian:bookworm
 
@@ -36,6 +39,7 @@ RUN sed -i 's#deb.debian.org#mirrors.aliyun.com#g' /etc/apt/sources.list.d/debia
 RUN mkdir /CLIProxyAPI
 
 COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
+COPY --from=builder ./app/plugins /CLIProxyAPI/plugins
 
 COPY config.example.yaml /CLIProxyAPI/config.example.yaml
 

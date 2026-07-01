@@ -1,25 +1,38 @@
-.PHONY: help dev build test test-auto fmt sync-config sync-config-dry tools build-sync-config
+.PHONY: help dev build plugins build-copilot-plugin test test-auto fmt sync-config sync-config-dry tools build-sync-config
 
 GO_PROXY ?= https://goproxy.cn,direct
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+PLUGIN_EXT := $(shell if [ "$(GOOS)" = "darwin" ]; then echo dylib; elif [ "$(GOOS)" = "windows" ]; then echo dll; else echo so; fi)
+PLUGIN_OUTPUT_DIR ?= plugins/$(GOOS)/$(GOARCH)
+COPILOT_PLUGIN_OUTPUT ?= $(PLUGIN_OUTPUT_DIR)/github-copilot.$(PLUGIN_EXT)
 
 help:
 	@echo "CLIProxyAPI development commands"
-	@echo "  make dev              Run the local server"
-	@echo "  make build            Build cmd/server"
-	@echo "  make test             Run all Go tests"
-	@echo "  make test-auto        Run Auto Router focused tests"
-	@echo "  make fmt              Format Go files"
-	@echo "  make sync-config      Add missing keys to config.yaml and .env"
-	@echo "  make sync-config-dry  Preview config sync without writing"
-	@echo "  make tools            Build production helper binaries"
-	@echo "  make build-sync-config Build only sync-config helper binaries"
+	@echo "  make dev                  Build local plugins and run the local server"
+	@echo "  make build                Build cmd/server"
+	@echo "  make plugins              Build maintained local plugins"
+	@echo "  make build-copilot-plugin Build GitHub Copilot provider plugin"
+	@echo "  make test                 Run all Go tests"
+	@echo "  make test-auto            Run Auto Router focused tests"
+	@echo "  make fmt                  Format Go files"
+	@echo "  make sync-config          Add missing keys to config.yaml and .env"
+	@echo "  make sync-config-dry      Preview config sync without writing"
+	@echo "  make tools                Build production helper binaries"
+	@echo "  make build-sync-config    Build only sync-config helper binaries"
 
-dev:
+dev: plugins
 	go run ./cmd/server
 
 build:
 	env GOPROXY=$(GO_PROXY) go build -o test-output ./cmd/server
 	rm -f test-output
+
+plugins: build-copilot-plugin
+
+build-copilot-plugin:
+	mkdir -p $(PLUGIN_OUTPUT_DIR)
+	env GOPROXY=$(GO_PROXY) go build -buildmode=c-shared -o $(COPILOT_PLUGIN_OUTPUT) ./plugins-src/github-copilot/go
 
 test:
 	env GOPROXY=$(GO_PROXY) go test ./...

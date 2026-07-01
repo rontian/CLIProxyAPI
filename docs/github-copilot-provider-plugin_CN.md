@@ -48,21 +48,39 @@ ExecutorOutputFormats: chat-completions
 
 登录成功只表示 GitHub OAuth 成功。账号是否具备 Copilot 订阅，以获取 Copilot token 或实际模型调用结果为准。
 
-## 构建
+## 构建与集成
+
+本地开发时直接使用：
+
+```bash
+make dev
+```
+
+`make dev` 会先执行 `make plugins`，把当前平台的插件产物编译到 `plugins/<GOOS>/<GOARCH>/`，然后启动 CLIProxyAPI。
+
+只编译插件：
+
+```bash
+make plugins
+```
+
+Docker 从源码构建镜像时会自动编译 Linux 插件并打包到 `/CLIProxyAPI/plugins/`。使用远端预构建镜像时，取决于该镜像是否已经包含本插件；如果没有，需要使用本地源码构建镜像。
+
+也可以手动编译。
 
 macOS：
 
 ```bash
-go build -buildmode=c-shared -o plugins/github-copilot.dylib ./plugins-src/github-copilot/go
+go build -buildmode=c-shared -o plugins/darwin/$(go env GOARCH)/github-copilot.dylib ./plugins-src/github-copilot/go
 ```
 
 Linux：
 
 ```bash
-go build -buildmode=c-shared -o plugins/github-copilot.so ./plugins-src/github-copilot/go
+go build -buildmode=c-shared -o plugins/linux/$(go env GOARCH)/github-copilot.so ./plugins-src/github-copilot/go
 ```
 
-插件文件名会成为插件 ID，所以建议固定为 `github-copilot.dylib` 或 `github-copilot.so`。
+插件文件名会成为插件 ID，所以建议固定为 `github-copilot.dylib` 或 `github-copilot.so`。CLIProxyAPI 会扫描 `plugins/<GOOS>/<GOARCH>/` 和 `plugins/`。
 
 ## 配置
 

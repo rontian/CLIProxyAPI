@@ -57,3 +57,6 @@
 - [x] Add example plugin config and build/run instructions.
 - [x] Keep maintained plugin source under `plugins-src/` and deploy compiled artifacts to runtime `plugins/`.
 - [x] Validate plugin build and core server compile.
+- [x] Integrate Copilot plugin build into local Makefile development flow.
+- [x] Package Copilot plugin artifact in Docker images.
+- [x] Update plugin build and deployment documentation.

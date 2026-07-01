@@ -80,11 +80,14 @@ $CPA_WORKSPACE/
 ```bash
 make help
 make dev
+make plugins
 make test-auto
 make build
 make sync-config-dry
 make sync-config
 ```
+
+`make dev` 会先编译维护中的本地插件到 `plugins/<GOOS>/<GOARCH>/`，再启动服务。当前包含 `github-copilot` provider 插件。插件是否加载仍取决于 `config.yaml` 中的 `plugins.enabled` 与 `plugins.configs.<pluginID>.enabled`。
 
 其中 `make sync-config` 只用于本地开发。生产或远程主机不应依赖 `make`、Python 或 Go 环境，应直接执行 `tools/` 下对应平台的预编译二进制。
 
@@ -243,6 +246,7 @@ ARM64 主机使用 `sync-config-linux-arm64`。Python 脚本 `./scripts/sync-con
    ```bash
    docker compose up -d --build
    ```
+   *CLIProxyAPI 从源码构建 Docker 镜像时会自动编译并打包维护中的本地插件，例如 `github-copilot`。如果直接使用远端预构建镜像，是否包含该插件取决于镜像版本。*
 
 **在 CPA-Manager 界面中配置它**：
 1. 登录进入管理端。
@@ -442,6 +446,7 @@ curl -X DELETE -s http://localhost:8317/v0/management/auto-router/sessions \
 cd "$CPA_WORKSPACE/CLIProxyAPI"
 gofmt -w .
 go test ./internal/api/handlers/management ./internal/api ./internal/autorouter ./internal/config ./sdk/api/handlers ./sdk/api/handlers/openai ./sdk/config
+go build -buildmode=c-shared -o /tmp/github-copilot-plugin.dylib ./plugins-src/github-copilot/go
 go build -o test-output ./cmd/server && rm test-output
 ```
 
