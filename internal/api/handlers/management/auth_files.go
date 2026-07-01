@@ -2195,15 +2195,18 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 					SetOAuthSessionError(state, "Authentication failed: code not found")
 					return
 				}
+				log.WithField("provider", "antigravity").Info("oauth callback received")
 				break
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, authCode, redirectURI)
+		tokenCtx, cancelToken := context.WithTimeout(ctx, 60*time.Second)
+		tokenResp, errToken := authSvc.ExchangeCodeForTokens(tokenCtx, authCode, redirectURI)
+		cancelToken()
 		if errToken != nil {
 			log.Errorf("Failed to exchange token: %v", errToken)
-			SetOAuthSessionError(state, "Failed to exchange token")
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Failed to exchange token", errToken))
 			return
 		}
 
@@ -2214,10 +2217,12 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			return
 		}
 
-		email, errInfo := authSvc.FetchUserInfo(ctx, accessToken)
+		userInfoCtx, cancelUserInfo := context.WithTimeout(ctx, 30*time.Second)
+		email, errInfo := authSvc.FetchUserInfo(userInfoCtx, accessToken)
+		cancelUserInfo()
 		if errInfo != nil {
 			log.Errorf("Failed to fetch user info: %v", errInfo)
-			SetOAuthSessionError(state, "Failed to fetch user info")
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Failed to fetch user info", errInfo))
 			return
 		}
 		email = strings.TrimSpace(email)
@@ -2229,7 +2234,9 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 
 		projectID := ""
 		if accessToken != "" {
-			fetchedProjectID, errProject := authSvc.FetchProjectID(ctx, accessToken)
+			projectCtx, cancelProject := context.WithTimeout(ctx, 20*time.Second)
+			fetchedProjectID, errProject := authSvc.FetchProjectID(projectCtx, accessToken)
+			cancelProject()
 			if errProject != nil {
 				log.Warnf("antigravity: failed to fetch project ID: %v", errProject)
 			} else {
@@ -2267,10 +2274,12 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			Label:    label,
 			Metadata: metadata,
 		}
-		savedPath, errSave := h.saveTokenRecord(ctx, record)
+		saveCtx, cancelSave := context.WithTimeout(ctx, 30*time.Second)
+		savedPath, errSave := h.saveTokenRecord(saveCtx, record)
+		cancelSave()
 		if errSave != nil {
 			log.Errorf("Failed to save token to file: %v", errSave)
-			SetOAuthSessionError(state, "Failed to save token to file")
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Failed to save token to file", errSave))
 			return
 		}
 

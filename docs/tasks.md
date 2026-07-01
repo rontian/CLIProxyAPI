@@ -11,6 +11,7 @@
 ## OAuth Login Reliability
 
 - [x] Report callback persistence failures instead of always showing OAuth success.
+- [x] Add Antigravity OAuth credential exchange timeout and detailed status errors.
 
 ## V1 Stable Router
 
