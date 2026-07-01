@@ -55,4 +55,5 @@
 - [x] Add a dynamic `github-copilot` provider plugin with device login, token refresh, model metadata, and chat-completions execution.
 - [x] Route plugin HTTP traffic through host callbacks so proxy config and request logging still apply.
 - [x] Add example plugin config and build/run instructions.
+- [x] Keep maintained plugin source under `plugins-src/` and deploy compiled artifacts to runtime `plugins/`.
 - [x] Validate plugin build and core server compile.

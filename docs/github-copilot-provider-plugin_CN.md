@@ -4,7 +4,7 @@
 
 ## 定位
 
-`github-copilot` 不作为 CLIProxyAPI 核心硬编码 provider 接入，而是作为动态插件接入：
+`github-copilot` 不作为 CLIProxyAPI 核心硬编码 provider 接入，而是作为动态插件接入。源码维护在 `plugins-src/github-copilot/go`，编译产物部署到运行时 `plugins/` 目录。
 
 - 插件能力：`AuthProvider`、`ModelProvider`、`ProviderExecutor`。
 - provider key：`github-copilot`。
@@ -53,13 +53,13 @@ ExecutorOutputFormats: chat-completions
 macOS：
 
 ```bash
-go build -buildmode=c-shared -o plugins/github-copilot.dylib ./examples/plugin/github-copilot/go
+go build -buildmode=c-shared -o plugins/github-copilot.dylib ./plugins-src/github-copilot/go
 ```
 
 Linux：
 
 ```bash
-go build -buildmode=c-shared -o plugins/github-copilot.so ./examples/plugin/github-copilot/go
+go build -buildmode=c-shared -o plugins/github-copilot.so ./plugins-src/github-copilot/go
 ```
 
 插件文件名会成为插件 ID，所以建议固定为 `github-copilot.dylib` 或 `github-copilot.so`。
