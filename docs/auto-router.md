@@ -10,6 +10,8 @@ Version 1 provides:
 
 - Configurable auto model names, starting with `auto`.
 - Configurable roles, each with a provider, target model, prompt template metadata, strengths, cost tier, and match keywords.
+- Optional per-role candidate model pools for Copilot-style Auto Model Selection V2.
+- Optional model selection policy: `balanced`, `cost-first`, or `quality-first`.
 - Optional model-backed brain judge that returns structured JSON.
 - Session stickiness so follow-up turns stay with the same role by default.
 - Role prompt injection for OpenAI Chat and Responses requests.
@@ -23,6 +25,10 @@ Version 1 intentionally does not:
 - Merge answers from multiple models.
 - Rewrite or summarize user history before forwarding to the selected expert model.
 - Execute tools or shell commands as a runtime.
+
+V2 keeps the same router shape and adds model selection inside the selected
+role. It is still not a multi-agent runtime. See
+`docs/auto-model-selection-v2.md` for the staged direction.
 
 ## Architecture
 
@@ -67,6 +73,8 @@ auto-router:
     - name: "auto"
       description: "Stable role-based model router"
       default-role: "fast"
+      policy:
+        strategy: "balanced"
       fallback:
         provider: "claude"
         model: "claude-sonnet-4-5"
@@ -104,6 +112,20 @@ auto-router:
             - "stack trace"
             - "docker"
             - "go test"
+          candidates:
+            - provider: "openai-compatible-deepseek"
+              model: "deepseek-v4-flash"
+              cost-tier: "low"
+              capability-tier: "medium"
+              priority: 80
+              min-complexity: "low"
+              max-complexity: "medium"
+            - provider: "codex"
+              model: "gpt-5-codex"
+              cost-tier: "high"
+              capability-tier: "high"
+              priority: 100
+              min-complexity: "high"
           prompt-template: |
             You are a senior coding assistant. Focus on implementation correctness.
 
@@ -123,6 +145,16 @@ auto-router:
 presets are shipped with CPA-Manager and are not written to `config.yaml`.
 Applying any preset copies its content into a concrete `models[].roles[]` entry;
 the role does not keep a live reference to the preset.
+
+`models[].policy.strategy` controls how candidate pools are scored:
+
+- `balanced`: prefer complexity fit, then a mix of capability and cost.
+- `cost-first`: prefer cheaper candidates when the task complexity allows it.
+- `quality-first`: prefer higher-capability candidates, especially for
+  medium/high-complexity requests.
+
+`roles[].candidates` is optional. If it is omitted, the legacy `provider/model`
+pair is treated as the role's only candidate, preserving V1 behavior.
 
 When `brain.provider` and `brain.model` are configured, the router asks the judge model for JSON before deterministic matching. The judge may only select configured roles (or `fallback`); the concrete provider/model still comes from configuration.
 
@@ -191,9 +223,7 @@ The dry-run endpoint previews deterministic routing without calling the brain mo
     "X-Session-Id": ["preview"]
   },
   "body": {
-    "messages": [
-      {"role": "user", "content": "docker build failed"}
-    ]
+    "messages": [{ "role": "user", "content": "docker build failed" }]
   }
 }
 ```

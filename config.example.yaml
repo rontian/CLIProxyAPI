@@ -191,6 +191,9 @@ video-result-auth-cache-ttl: "3h"
 #     - name: "auto"
 #       description: "Stable role-based model router"
 #       default-role: "fast"
+#       policy:
+#         # balanced: default; cost-first: prefer cheaper candidates; quality-first: prefer stronger candidates.
+#         strategy: "balanced"
 #       fallback:
 #         provider: "claude"
 #         model: "claude-sonnet-4-5"
@@ -229,6 +232,20 @@ video-result-auth-cache-ttl: "3h"
 #             - "stack trace"
 #             - "docker"
 #             - "go test"
+#           candidates:
+#             - provider: "openai-compatible-deepseek"
+#               model: "deepseek-v4-flash"
+#               cost-tier: "low"
+#               capability-tier: "medium"
+#               priority: 80
+#               min-complexity: "low"
+#               max-complexity: "medium"
+#             - provider: "codex"
+#               model: "gpt-5-codex"
+#               cost-tier: "high"
+#               capability-tier: "high"
+#               priority: 100
+#               min-complexity: "high"
 #           prompt-template: |
 #             You are a senior coding assistant. Focus on implementation correctness.
 #         - id: "fast"
@@ -241,7 +258,6 @@ video-result-auth-cache-ttl: "3h"
 #             - "short Q&A"
 #             - "translation"
 #             - "summary"
-
 
 # Core auth auto-refresh worker pool size (OAuth/file-based auth token refresh).
 # When > 0, overrides the default worker count (16).

@@ -22,14 +22,14 @@ git merge main
 
 ## 本地扩展总览
 
-| 扩展 | 主要配置/API | 重点文件 | 合并关注点 |
-| --- | --- | --- | --- |
-| Embeddings 端点 | `/v1/embeddings` | `internal/api`、`internal/runtime/executor`、相关 translator | 官方若新增 embeddings 路由或模型能力，优先保留官方通用逻辑，再接回本地兼容行为 |
-| 图片生成 | `/v1/images/*`、`disable-image-generation`、`custom-image-model-keywords`、`gpt-image-2-base-model` | `internal/api/server.go`、`internal/runtime/executor`、`internal/translator/*`、`config.example.yaml` | 注意模型识别、禁用策略、Responses/Chat 图片输出转换是否被官方重写 |
-| 视频生成 | `/v1/videos/*`、`/openai/v1/videos/*`、`video-result-auth-cache-ttl`、`custom-video-model-keywords` | `internal/api/server.go`、video handlers、runtime executor、日志路径识别 | 官方若新增视频 API，确认 native/OpenAI 兼容路径是否仍区分正确 |
-| OAuth 模型别名 | `oauth-model-alias`、auth JSON `model-aliases` | `internal/config`、auth file handling、model listing/routing | 合并时确认全局别名、每认证文件别名、`force-mapping`、`fork` 语义没有被覆盖 |
-| OpenAI 兼容提供商模型别名 | provider `models[].alias` | `internal/config`、provider selection、model registry/listing | 一个 provider 可暴露多个别名；避免官方模型列表重构后丢失 alias 映射 |
-| Auto Router | `auto-router.models`、`auto-router.role-presets`、`/v0/management/auto-router*` | `internal/autorouter`、`internal/config/auto_router.go`、`internal/api/handlers/management/auto_router.go`、`internal/api/server.go` | 官方若也实现自动路由，需要产品级合并判断，不要简单选 ours/theirs |
+| 扩展                      | 主要配置/API                                                                                                                         | 重点文件                                                                                                                             | 合并关注点                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Embeddings 端点           | `/v1/embeddings`                                                                                                                     | `internal/api`、`internal/runtime/executor`、相关 translator                                                                         | 官方若新增 embeddings 路由或模型能力，优先保留官方通用逻辑，再接回本地兼容行为                     |
+| 图片生成                  | `/v1/images/*`、`disable-image-generation`、`custom-image-model-keywords`、`gpt-image-2-base-model`                                  | `internal/api/server.go`、`internal/runtime/executor`、`internal/translator/*`、`config.example.yaml`                                | 注意模型识别、禁用策略、Responses/Chat 图片输出转换是否被官方重写                                  |
+| 视频生成                  | `/v1/videos/*`、`/openai/v1/videos/*`、`video-result-auth-cache-ttl`、`custom-video-model-keywords`                                  | `internal/api/server.go`、video handlers、runtime executor、日志路径识别                                                             | 官方若新增视频 API，确认 native/OpenAI 兼容路径是否仍区分正确                                      |
+| OAuth 模型别名            | `oauth-model-alias`、auth JSON `model-aliases`                                                                                       | `internal/config`、auth file handling、model listing/routing                                                                         | 合并时确认全局别名、每认证文件别名、`force-mapping`、`fork` 语义没有被覆盖                         |
+| OpenAI 兼容提供商模型别名 | provider `models[].alias`                                                                                                            | `internal/config`、provider selection、model registry/listing                                                                        | 一个 provider 可暴露多个别名；避免官方模型列表重构后丢失 alias 映射                                |
+| Auto Router               | `auto-router.models`、`auto-router.role-presets`、`auto-router.models[].policy`、`roles[].candidates`、`/v0/management/auto-router*` | `internal/autorouter`、`internal/config/auto_router.go`、`internal/api/handlers/management/auto_router.go`、`internal/api/server.go` | 官方若也实现自动路由，需要产品级合并判断，不要简单选 ours/theirs；候选池与策略字段必须保持向后兼容 |
 
 ## 冲突处理顺序
 

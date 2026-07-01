@@ -19,16 +19,34 @@ type AutoModelConfig struct {
 	Name        string                  `yaml:"name" json:"name"`
 	Description string                  `yaml:"description,omitempty" json:"description,omitempty"`
 	DefaultRole string                  `yaml:"default-role,omitempty" json:"default-role,omitempty"`
+	Policy      AutoRouterPolicyConfig  `yaml:"policy,omitempty" json:"policy,omitempty"`
 	Fallback    AutoRouteTargetConfig   `yaml:"fallback" json:"fallback"`
 	Brain       AutoRouterBrainConfig   `yaml:"brain" json:"brain"`
 	Session     AutoRouterSessionConfig `yaml:"session" json:"session"`
 	Roles       []AutoRouterRoleConfig  `yaml:"roles" json:"roles"`
 }
 
+// AutoRouterPolicyConfig controls how a selected role chooses a concrete model candidate.
+type AutoRouterPolicyConfig struct {
+	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+}
+
 // AutoRouteTargetConfig points at a concrete provider/model target.
 type AutoRouteTargetConfig struct {
 	Provider string `yaml:"provider" json:"provider"`
 	Model    string `yaml:"model" json:"model"`
+}
+
+// AutoRouteCandidateConfig describes one selectable model candidate for a role.
+type AutoRouteCandidateConfig struct {
+	Provider       string `yaml:"provider" json:"provider"`
+	Model          string `yaml:"model" json:"model"`
+	CostTier       string `yaml:"cost-tier,omitempty" json:"cost-tier,omitempty"`
+	CapabilityTier string `yaml:"capability-tier,omitempty" json:"capability-tier,omitempty"`
+	Priority       int    `yaml:"priority,omitempty" json:"priority,omitempty"`
+	MinComplexity  string `yaml:"min-complexity,omitempty" json:"min-complexity,omitempty"`
+	MaxComplexity  string `yaml:"max-complexity,omitempty" json:"max-complexity,omitempty"`
+	Disabled       bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
 
 // AutoRouterBrainConfig reserves the routing judge model used by later brain-backed decisions.
@@ -53,17 +71,18 @@ type AutoRouterSessionConfig struct {
 
 // AutoRouterRoleConfig maps an auto role to a concrete provider/model target.
 type AutoRouterRoleConfig struct {
-	ID             string   `yaml:"id" json:"id"`
-	Name           string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Description    string   `yaml:"description,omitempty" json:"description,omitempty"`
-	Provider       string   `yaml:"provider" json:"provider"`
-	Model          string   `yaml:"model" json:"model"`
-	CostTier       string   `yaml:"cost-tier,omitempty" json:"cost-tier,omitempty"`
-	Priority       int      `yaml:"priority,omitempty" json:"priority,omitempty"`
-	Strengths      []string `yaml:"strengths,omitempty" json:"strengths,omitempty"`
-	MatchKeywords  []string `yaml:"match-keywords,omitempty" json:"match-keywords,omitempty"`
-	PromptTemplate string   `yaml:"prompt-template,omitempty" json:"prompt-template,omitempty"`
-	Disabled       bool     `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	ID             string                     `yaml:"id" json:"id"`
+	Name           string                     `yaml:"name,omitempty" json:"name,omitempty"`
+	Description    string                     `yaml:"description,omitempty" json:"description,omitempty"`
+	Provider       string                     `yaml:"provider" json:"provider"`
+	Model          string                     `yaml:"model" json:"model"`
+	CostTier       string                     `yaml:"cost-tier,omitempty" json:"cost-tier,omitempty"`
+	Priority       int                        `yaml:"priority,omitempty" json:"priority,omitempty"`
+	Strengths      []string                   `yaml:"strengths,omitempty" json:"strengths,omitempty"`
+	MatchKeywords  []string                   `yaml:"match-keywords,omitempty" json:"match-keywords,omitempty"`
+	PromptTemplate string                     `yaml:"prompt-template,omitempty" json:"prompt-template,omitempty"`
+	Disabled       bool                       `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Candidates     []AutoRouteCandidateConfig `yaml:"candidates,omitempty" json:"candidates,omitempty"`
 }
 
 // AutoRouterRolePresetConfig stores user-defined reusable role templates.
@@ -105,6 +124,7 @@ func sanitizeAutoModels(models []AutoModelConfig) []AutoModelConfig {
 		seen[key] = struct{}{}
 		model.Description = strings.TrimSpace(model.Description)
 		model.DefaultRole = strings.TrimSpace(model.DefaultRole)
+		model.Policy = sanitizeAutoPolicy(model.Policy)
 		model.Fallback = sanitizeAutoTarget(model.Fallback)
 		model.Brain.Provider = strings.ToLower(strings.TrimSpace(model.Brain.Provider))
 		model.Brain.Model = strings.TrimSpace(model.Brain.Model)
@@ -123,6 +143,16 @@ func sanitizeAutoTarget(target AutoRouteTargetConfig) AutoRouteTargetConfig {
 	target.Provider = strings.ToLower(strings.TrimSpace(target.Provider))
 	target.Model = strings.TrimSpace(target.Model)
 	return target
+}
+
+func sanitizeAutoPolicy(policy AutoRouterPolicyConfig) AutoRouterPolicyConfig {
+	policy.Strategy = strings.ToLower(strings.TrimSpace(policy.Strategy))
+	switch policy.Strategy {
+	case "", "balanced", "cost-first", "quality-first":
+	default:
+		policy.Strategy = "balanced"
+	}
+	return policy
 }
 
 func sanitizeAutoSession(session AutoRouterSessionConfig) AutoRouterSessionConfig {
@@ -167,12 +197,63 @@ func sanitizeAutoRoles(roles []AutoRouterRoleConfig) []AutoRouterRoleConfig {
 		role.Strengths = trimUniqueStrings(role.Strengths, false)
 		role.MatchKeywords = trimUniqueStrings(role.MatchKeywords, true)
 		role.PromptTemplate = strings.TrimSpace(role.PromptTemplate)
+		role.Candidates = sanitizeAutoCandidates(role.Candidates)
+		if role.Provider == "" || role.Model == "" {
+			if len(role.Candidates) > 0 {
+				first := role.Candidates[0]
+				role.Provider = first.Provider
+				role.Model = first.Model
+			}
+		}
 		if role.Provider == "" || role.Model == "" {
 			continue
 		}
 		out = append(out, role)
 	}
 	return out
+}
+
+func sanitizeAutoCandidates(candidates []AutoRouteCandidateConfig) []AutoRouteCandidateConfig {
+	out := make([]AutoRouteCandidateConfig, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate.Provider = strings.ToLower(strings.TrimSpace(candidate.Provider))
+		candidate.Model = strings.TrimSpace(candidate.Model)
+		if candidate.Provider == "" || candidate.Model == "" {
+			continue
+		}
+		key := candidate.Provider + "\x00" + candidate.Model
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		candidate.CostTier = normalizeAutoTier(candidate.CostTier)
+		candidate.CapabilityTier = normalizeAutoTier(candidate.CapabilityTier)
+		candidate.MinComplexity = normalizeAutoComplexity(candidate.MinComplexity)
+		candidate.MaxComplexity = normalizeAutoComplexity(candidate.MaxComplexity)
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func normalizeAutoTier(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "low", "medium", "high":
+		return value
+	default:
+		return ""
+	}
+}
+
+func normalizeAutoComplexity(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "low", "medium", "high":
+		return value
+	default:
+		return ""
+	}
 }
 
 func sanitizeAutoRolePresets(presets []AutoRouterRolePresetConfig) []AutoRouterRolePresetConfig {

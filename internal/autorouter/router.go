@@ -39,6 +39,8 @@ type Decision struct {
 	Confidence     float64 `json:"confidence,omitempty"`
 	Brain          bool    `json:"brain"`
 	Sticky         bool    `json:"sticky"`
+	Strategy       string  `json:"strategy,omitempty"`
+	Complexity     string  `json:"complexity,omitempty"`
 }
 
 // BrainRequest is passed to an optional model-backed judge.
@@ -142,7 +144,7 @@ func (r *Router) Preview(req Request) (Decision, bool) {
 		return state.stickyDecision, true
 	}
 	role, reason := selectRole(state.autoModel, req)
-	decision := decisionFromRoleOrFallback(state.autoModel, role, reason, state.requestedSuffix)
+	decision := decisionFromRoleOrFallback(state.autoModel, role, reason, state.requestedSuffix, req)
 	if state.priorBinding != nil {
 		decision = switchDecisionOrSticky(state.autoModel, *state.priorBinding, decision, state.requestedSuffix)
 	}
@@ -210,7 +212,7 @@ func (r *Router) RouteWithJudge(ctx context.Context, req Request, judge JudgeFun
 	}
 
 	role, reason := selectRole(state.autoModel, req)
-	decision := decisionFromRoleOrFallback(state.autoModel, role, reason, state.requestedSuffix)
+	decision := decisionFromRoleOrFallback(state.autoModel, role, reason, state.requestedSuffix, req)
 	if decision.Provider == "" || decision.Model == "" {
 		return Decision{}, false
 	}
@@ -273,7 +275,7 @@ func (r *Router) judgeDecision(ctx context.Context, autoModel config.AutoModelCo
 	if err != nil {
 		return Decision{}, false
 	}
-	decision, ok := decisionFromBrain(autoModel, brainDecision, requestedSuffix)
+	decision, ok := decisionFromBrain(autoModel, brainDecision, requestedSuffix, req)
 	return decision, ok
 }
 
@@ -353,15 +355,18 @@ func selectRole(model config.AutoModelConfig, req Request) (config.AutoRouterRol
 	return config.AutoRouterRoleConfig{}, "selected fallback target"
 }
 
-func decisionFromRoleOrFallback(model config.AutoModelConfig, role config.AutoRouterRoleConfig, reason, requestedSuffix string) Decision {
+func decisionFromRoleOrFallback(model config.AutoModelConfig, role config.AutoRouterRoleConfig, reason, requestedSuffix string, req Request) Decision {
 	if role.ID != "" {
+		target, complexity := selectRoleTarget(model.Policy, role, req)
 		return Decision{
-			Provider:       role.Provider,
-			Model:          withRequestedSuffix(role.Model, requestedSuffix),
+			Provider:       target.Provider,
+			Model:          withRequestedSuffix(target.Model, requestedSuffix),
 			RoleID:         role.ID,
-			Reason:         reason,
+			Reason:         reasonWithTarget(reason, target),
 			PromptTemplate: strings.TrimSpace(role.PromptTemplate),
 			Confidence:     1,
+			Strategy:       autoPolicyStrategy(model.Policy),
+			Complexity:     complexity,
 		}
 	}
 	return Decision{
@@ -370,10 +375,12 @@ func decisionFromRoleOrFallback(model config.AutoModelConfig, role config.AutoRo
 		RoleID:     "fallback",
 		Reason:     reason,
 		Confidence: 0.5,
+		Strategy:   autoPolicyStrategy(model.Policy),
+		Complexity: requestComplexity(req.Body),
 	}
 }
 
-func decisionFromBrain(model config.AutoModelConfig, brain BrainDecision, requestedSuffix string) (Decision, bool) {
+func decisionFromBrain(model config.AutoModelConfig, brain BrainDecision, requestedSuffix string, req Request) (Decision, bool) {
 	roleID := strings.TrimSpace(brain.RoleID)
 	if roleID == "" {
 		return Decision{}, false
@@ -399,17 +406,189 @@ func decisionFromBrain(model config.AutoModelConfig, brain BrainDecision, reques
 		if role.Disabled || !strings.EqualFold(role.ID, roleID) {
 			continue
 		}
+		target, complexity := selectRoleTarget(model.Policy, role, req)
 		return Decision{
-			Provider:       role.Provider,
-			Model:          withRequestedSuffix(role.Model, requestedSuffix),
+			Provider:       target.Provider,
+			Model:          withRequestedSuffix(target.Model, requestedSuffix),
 			RoleID:         role.ID,
-			Reason:         reason,
+			Reason:         reasonWithTarget(reason, target),
 			PromptTemplate: strings.TrimSpace(role.PromptTemplate),
 			Confidence:     brain.Confidence,
 			Brain:          true,
+			Strategy:       autoPolicyStrategy(model.Policy),
+			Complexity:     complexity,
 		}, true
 	}
 	return Decision{}, false
+}
+
+func selectRoleTarget(policy config.AutoRouterPolicyConfig, role config.AutoRouterRoleConfig, req Request) (config.AutoRouteCandidateConfig, string) {
+	complexity := requestComplexity(req.Body)
+	candidates := roleCandidates(role)
+	if len(candidates) == 0 {
+		return config.AutoRouteCandidateConfig{}, complexity
+	}
+	strategy := autoPolicyStrategy(policy)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidateScore(strategy, complexity, candidates[i]) > candidateScore(strategy, complexity, candidates[j])
+	})
+	return candidates[0], complexity
+}
+
+func roleCandidates(role config.AutoRouterRoleConfig) []config.AutoRouteCandidateConfig {
+	candidates := make([]config.AutoRouteCandidateConfig, 0, len(role.Candidates)+1)
+	for _, candidate := range role.Candidates {
+		if candidate.Disabled || candidate.Provider == "" || candidate.Model == "" {
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+	if role.Provider != "" && role.Model != "" {
+		exists := false
+		for _, candidate := range candidates {
+			if strings.EqualFold(candidate.Provider, role.Provider) && strings.EqualFold(candidate.Model, role.Model) {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			candidates = append(candidates, config.AutoRouteCandidateConfig{
+				Provider:       role.Provider,
+				Model:          role.Model,
+				CostTier:       role.CostTier,
+				CapabilityTier: "medium",
+				Priority:       role.Priority,
+			})
+		}
+	}
+	return candidates
+}
+
+func candidateScore(strategy, complexity string, candidate config.AutoRouteCandidateConfig) int {
+	score := candidate.Priority
+	score += complexityFitScore(complexity, candidate)
+	cost := tierValue(candidate.CostTier)
+	capability := tierValue(candidate.CapabilityTier)
+	switch strategy {
+	case "cost-first":
+		score += (2 - cost) * 35
+		score += capability * 8
+	case "quality-first":
+		score += capability * 35
+		if complexity == "low" {
+			score += (2 - cost) * 8
+		}
+	default:
+		score += capability * 20
+		score += (2 - cost) * 16
+	}
+	if complexity == "high" {
+		score += capability * 20
+	}
+	if complexity == "low" {
+		score += (2 - cost) * 12
+	}
+	return score
+}
+
+func complexityFitScore(complexity string, candidate config.AutoRouteCandidateConfig) int {
+	level := complexityValue(complexity)
+	minLevel := complexityValue(candidate.MinComplexity)
+	maxLevel := complexityValue(candidate.MaxComplexity)
+	if candidate.MinComplexity != "" && level < minLevel {
+		return -120
+	}
+	if candidate.MaxComplexity != "" && level > maxLevel {
+		return -120
+	}
+	return 40
+}
+
+func autoPolicyStrategy(policy config.AutoRouterPolicyConfig) string {
+	switch strings.ToLower(strings.TrimSpace(policy.Strategy)) {
+	case "cost-first", "quality-first":
+		return strings.ToLower(strings.TrimSpace(policy.Strategy))
+	default:
+		return "balanced"
+	}
+}
+
+func tierValue(value string) int {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "high":
+		return 2
+	case "medium":
+		return 1
+	case "low":
+		return 0
+	default:
+		return 1
+	}
+}
+
+func complexityValue(value string) int {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "high":
+		return 2
+	case "medium":
+		return 1
+	case "low":
+		return 0
+	default:
+		return 1
+	}
+}
+
+func requestComplexity(body []byte) string {
+	text := strings.ToLower(requestText(body))
+	words := strings.Fields(text)
+	score := 0
+	if len(words) > 180 {
+		score += 2
+	} else if len(words) > 60 {
+		score++
+	}
+	highSignals := []string{
+		"architecture", "refactor", "debug", "stack trace", "failing test", "implement",
+		"repository", "repo", "migration", "performance", "security", "并发", "架构", "重构", "调试", "实现",
+	}
+	for _, signal := range highSignals {
+		if strings.Contains(text, signal) {
+			score += 2
+			break
+		}
+	}
+	mediumSignals := []string{
+		"explain", "compare", "analyze", "summarize", "translate", "review", "分析", "总结", "翻译", "解释",
+	}
+	for _, signal := range mediumSignals {
+		if strings.Contains(text, signal) {
+			score++
+			break
+		}
+	}
+	if strings.Contains(text, "```") || strings.Contains(text, "error:") || strings.Contains(text, "panic:") {
+		score += 2
+	}
+	switch {
+	case score >= 3:
+		return "high"
+	case score >= 1:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func reasonWithTarget(reason string, target config.AutoRouteCandidateConfig) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "selected role target"
+	}
+	if target.Provider == "" || target.Model == "" {
+		return reason
+	}
+	return fmt.Sprintf("%s; selected candidate %s/%s", reason, target.Provider, target.Model)
 }
 
 func switchDecisionOrSticky(model config.AutoModelConfig, prior sessionBinding, decision Decision, requestedSuffix string) Decision {

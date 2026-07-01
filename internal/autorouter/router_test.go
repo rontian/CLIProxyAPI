@@ -294,3 +294,89 @@ func TestExplicitSwitchRespectsMaxSwitches(t *testing.T) {
 		t.Fatalf("third decision = %+v, %v; want sticky writing after switch limit", third, ok)
 	}
 }
+
+func TestRouteSelectsCostFirstCandidateForLowComplexity(t *testing.T) {
+	cfg := &config.SDKConfig{AutoRouter: config.AutoRouterConfig{
+		Enabled: true,
+		Models: []config.AutoModelConfig{{
+			Name:     "auto",
+			Policy:   config.AutoRouterPolicyConfig{Strategy: "cost-first"},
+			Session:  config.AutoRouterSessionConfig{Enabled: false},
+			Fallback: config.AutoRouteTargetConfig{Provider: "claude", Model: "claude-sonnet"},
+			Roles: []config.AutoRouterRoleConfig{{
+				ID:            "fast",
+				Provider:      "claude",
+				Model:         "claude-sonnet",
+				MatchKeywords: []string{"hello"},
+				Candidates: []config.AutoRouteCandidateConfig{
+					{Provider: "codex", Model: "gpt-5-codex", CostTier: "high", CapabilityTier: "high", Priority: 100, MinComplexity: "high"},
+					{Provider: "gemini", Model: "gemini-flash", CostTier: "low", CapabilityTier: "medium", Priority: 80, MaxComplexity: "medium"},
+				},
+			}},
+		}},
+	}}
+	decision, ok := New(cfg).Route(Request{
+		RequestedModel: "auto",
+		Body:           []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if !ok {
+		t.Fatal("Route() handled = false, want true")
+	}
+	if decision.Provider != "gemini" || decision.Model != "gemini-flash" || decision.Strategy != "cost-first" || decision.Complexity != "low" {
+		t.Fatalf("decision = %+v, want low-cost gemini candidate", decision)
+	}
+}
+
+func TestRouteSelectsQualityCandidateForHighComplexity(t *testing.T) {
+	cfg := &config.SDKConfig{AutoRouter: config.AutoRouterConfig{
+		Enabled: true,
+		Models: []config.AutoModelConfig{{
+			Name:     "auto",
+			Policy:   config.AutoRouterPolicyConfig{Strategy: "quality-first"},
+			Session:  config.AutoRouterSessionConfig{Enabled: false},
+			Fallback: config.AutoRouteTargetConfig{Provider: "claude", Model: "claude-sonnet"},
+			Roles: []config.AutoRouterRoleConfig{{
+				ID:            "coding",
+				Provider:      "gemini",
+				Model:         "gemini-flash",
+				MatchKeywords: []string{"debug"},
+				Candidates: []config.AutoRouteCandidateConfig{
+					{Provider: "gemini", Model: "gemini-flash", CostTier: "low", CapabilityTier: "medium", Priority: 80, MaxComplexity: "medium"},
+					{Provider: "codex", Model: "gpt-5-codex", CostTier: "high", CapabilityTier: "high", Priority: 100, MinComplexity: "high"},
+				},
+			}},
+		}},
+	}}
+	decision, ok := New(cfg).Route(Request{
+		RequestedModel: "auto",
+		Body:           []byte(`{"messages":[{"role":"user","content":"debug this repository architecture and failing test stack trace\nerror: build failed"}]}`),
+	})
+	if !ok {
+		t.Fatal("Route() handled = false, want true")
+	}
+	if decision.Provider != "codex" || decision.Model != "gpt-5-codex" || decision.Strategy != "quality-first" || decision.Complexity != "high" {
+		t.Fatalf("decision = %+v, want high-capability codex candidate", decision)
+	}
+}
+
+func TestRouteCandidateSelectionKeepsLegacyRoleTarget(t *testing.T) {
+	cfg := &config.SDKConfig{AutoRouter: config.AutoRouterConfig{
+		Enabled: true,
+		Models: []config.AutoModelConfig{{
+			Name:     "auto",
+			Session:  config.AutoRouterSessionConfig{Enabled: false},
+			Fallback: config.AutoRouteTargetConfig{Provider: "claude", Model: "claude-sonnet"},
+			Roles:    []config.AutoRouterRoleConfig{{ID: "fast", Provider: "gemini", Model: "gemini-flash", MatchKeywords: []string{"hello"}}},
+		}},
+	}}
+	decision, ok := New(cfg).Route(Request{
+		RequestedModel: "auto",
+		Body:           []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if !ok {
+		t.Fatal("Route() handled = false, want true")
+	}
+	if decision.Provider != "gemini" || decision.Model != "gemini-flash" || decision.Strategy != "balanced" {
+		t.Fatalf("decision = %+v, want legacy role target", decision)
+	}
+}

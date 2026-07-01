@@ -37,6 +37,11 @@
 
 ## V2 Runtime Direction
 
+- [x] Add Copilot-style Auto Model Selection v2 design documentation.
+- [x] Add auto-router policy and per-role model candidate schema.
+- [x] Add request complexity scoring for auto-router candidate selection.
+- [x] Select role model candidates by strategy, complexity, cost, and priority.
+- [x] Add tests for candidate normalization and policy-based selection.
 - [ ] Design `auto-agent` runtime state model.
 - [ ] Add planner/worker/reviewer/finalizer step types.
 - [ ] Add trace records for each model call.
