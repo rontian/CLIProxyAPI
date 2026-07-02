@@ -56,6 +56,9 @@ static void free_host_buffer(void* ptr, size_t len) {
 import "C"
 
 import (
+	"bytes"
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -81,12 +84,15 @@ const (
 	defaultEditor       = "vscode/1.104.0"
 	defaultEditorPlugin = "copilot-chat/0.30.0"
 	defaultUserAgent    = "GitHubCopilotChat/0.30.0"
+	loginHTTPTimeout    = 20 * time.Second
 	refreshSkew         = 5 * time.Minute
 )
 
 var (
 	configMu      sync.RWMutex
 	currentConfig = defaultConfig()
+	loginStateMu  sync.Mutex
+	loginStates   = map[string]loginState{}
 )
 
 type envelope struct {
@@ -183,6 +189,39 @@ type copilotStorage struct {
 	LoginAt            time.Time         `json:"login_at,omitempty"`
 }
 
+func newLoginStateID() (string, error) {
+	var raw [16]byte
+	if _, errRead := rand.Read(raw[:]); errRead != nil {
+		return "", fmt.Errorf("generate login state: %w", errRead)
+	}
+	return "ghc-" + hex.EncodeToString(raw[:]), nil
+}
+
+func storeLoginState(id string, state loginState) {
+	loginStateMu.Lock()
+	defer loginStateMu.Unlock()
+	now := time.Now()
+	for key, item := range loginStates {
+		if now.After(item.ExpiresAt.Add(time.Minute)) {
+			delete(loginStates, key)
+		}
+	}
+	loginStates[id] = state
+}
+
+func loadLoginState(id string) (loginState, bool) {
+	loginStateMu.Lock()
+	defer loginStateMu.Unlock()
+	state, ok := loginStates[id]
+	return state, ok
+}
+
+func deleteLoginState(id string) {
+	loginStateMu.Lock()
+	delete(loginStates, id)
+	loginStateMu.Unlock()
+}
+
 type copilotTokenResponse struct {
 	Token         string            `json:"token"`
 	ExpiresAt     int64             `json:"expires_at"`
@@ -219,10 +258,58 @@ type hostHTTPResponse struct {
 	Body       []byte      `json:"body,omitempty"`
 }
 
+func (r *hostHTTPResponse) UnmarshalJSON(raw []byte) error {
+	type snake hostHTTPResponse
+	var in struct {
+		snake
+		StatusCodeCamel int         `json:"StatusCode"`
+		HeadersCamel    http.Header `json:"Headers"`
+		BodyCamel       []byte      `json:"Body"`
+	}
+	if errDecode := json.Unmarshal(raw, &in); errDecode != nil {
+		return errDecode
+	}
+	*r = hostHTTPResponse(in.snake)
+	if r.StatusCode == 0 {
+		r.StatusCode = in.StatusCodeCamel
+	}
+	if len(r.Headers) == 0 {
+		r.Headers = in.HeadersCamel
+	}
+	if len(r.Body) == 0 {
+		r.Body = in.BodyCamel
+	}
+	return nil
+}
+
 type hostHTTPStreamResponse struct {
 	StatusCode int         `json:"status_code"`
 	Headers    http.Header `json:"headers,omitempty"`
 	StreamID   string      `json:"stream_id,omitempty"`
+}
+
+func (r *hostHTTPStreamResponse) UnmarshalJSON(raw []byte) error {
+	type snake hostHTTPStreamResponse
+	var in struct {
+		snake
+		StatusCodeCamel int         `json:"StatusCode"`
+		HeadersCamel    http.Header `json:"Headers"`
+		StreamIDCamel   string      `json:"StreamID"`
+	}
+	if errDecode := json.Unmarshal(raw, &in); errDecode != nil {
+		return errDecode
+	}
+	*r = hostHTTPStreamResponse(in.snake)
+	if r.StatusCode == 0 {
+		r.StatusCode = in.StatusCodeCamel
+	}
+	if len(r.Headers) == 0 {
+		r.Headers = in.HeadersCamel
+	}
+	if r.StreamID == "" {
+		r.StreamID = in.StreamIDCamel
+	}
+	return nil
 }
 
 type hostHTTPStreamReadRequest struct {
@@ -297,7 +384,11 @@ func cliproxyPluginFree(ptr unsafe.Pointer, len C.size_t) {
 }
 
 //export cliproxyPluginShutdown
-func cliproxyPluginShutdown() {}
+func cliproxyPluginShutdown() {
+	loginStateMu.Lock()
+	loginStates = map[string]loginState{}
+	loginStateMu.Unlock()
+}
 
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
@@ -340,7 +431,7 @@ func pluginRegistration(cfg pluginConfig) registration {
 	return registration{
 		SchemaVersion: pluginabi.SchemaVersion,
 		Metadata: pluginapi.Metadata{
-			Name:             "GitHub Copilot Provider",
+			Name:             "GitHub Copilot",
 			Version:          "0.1.0",
 			Author:           "router-for-me",
 			GitHubRepository: "https://github.com/router-for-me/CLIProxyAPI",
@@ -373,7 +464,7 @@ func authLoginStart(raw []byte) ([]byte, error) {
 	values := url.Values{}
 	values.Set("client_id", cfg.ClientID)
 	values.Set("scope", "read:user")
-	resp, errDo := hostDo(http.MethodPost, trimRightSlash(cfg.GitHubBaseURL)+"/login/device/code", formHeaders(cfg), []byte(values.Encode()))
+	resp, errDo := hostDoWithTimeout(http.MethodPost, trimRightSlash(cfg.GitHubBaseURL)+"/login/device/code", formHeaders(cfg), []byte(values.Encode()), loginHTTPTimeout)
 	if errDo != nil {
 		return nil, errDo
 	}
@@ -391,16 +482,17 @@ func authLoginStart(raw []byte) ([]byte, error) {
 	if decoded.ExpiresIn <= 0 {
 		expires = time.Now().Add(15 * time.Minute).UTC()
 	}
-	stateRaw, errState := json.Marshal(loginState{
+	stateID, errState := newLoginStateID()
+	if errState != nil {
+		return nil, errState
+	}
+	storeLoginState(stateID, loginState{
 		DeviceCode: decoded.DeviceCode,
 		UserCode:   decoded.UserCode,
 		Interval:   decoded.Interval,
 		ExpiresAt:  expires,
 		Config:     cfg,
 	})
-	if errState != nil {
-		return nil, errState
-	}
 	loginURL := decoded.VerificationURIComplete
 	if strings.TrimSpace(loginURL) == "" {
 		loginURL = decoded.VerificationURI
@@ -408,11 +500,12 @@ func authLoginStart(raw []byte) ([]byte, error) {
 	return okEnvelope(pluginapi.AuthLoginStartResponse{
 		Provider:  providerID,
 		URL:       loginURL,
-		State:     string(stateRaw),
+		State:     stateID,
 		ExpiresAt: expires,
 		Metadata: map[string]any{
 			"user_code": decoded.UserCode,
 			"interval":  decoded.Interval,
+			"flow":      "device",
 		},
 	})
 }
@@ -422,11 +515,12 @@ func authLoginPoll(raw []byte) ([]byte, error) {
 	if errDecode := json.Unmarshal(raw, &req); errDecode != nil {
 		return nil, errDecode
 	}
-	var state loginState
-	if errDecode := json.Unmarshal([]byte(req.State), &state); errDecode != nil {
-		return nil, fmt.Errorf("decode github copilot login state: %w", errDecode)
+	state, okState := loadLoginState(req.State)
+	if !okState {
+		return okEnvelope(pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: "GitHub Copilot login state expired or not found"})
 	}
 	if time.Now().After(state.ExpiresAt) {
+		deleteLoginState(req.State)
 		return okEnvelope(pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: "GitHub device login expired"})
 	}
 	cfg := normalizeConfig(state.Config)
@@ -434,7 +528,7 @@ func authLoginPoll(raw []byte) ([]byte, error) {
 	values.Set("client_id", cfg.ClientID)
 	values.Set("device_code", state.DeviceCode)
 	values.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
-	resp, errDo := hostDo(http.MethodPost, trimRightSlash(cfg.GitHubBaseURL)+"/login/oauth/access_token", formHeaders(cfg), []byte(values.Encode()))
+	resp, errDo := hostDoWithTimeout(http.MethodPost, trimRightSlash(cfg.GitHubBaseURL)+"/login/oauth/access_token", formHeaders(cfg), []byte(values.Encode()), loginHTTPTimeout)
 	if errDo != nil {
 		return nil, errDo
 	}
@@ -461,6 +555,7 @@ func authLoginPoll(raw []byte) ([]byte, error) {
 	if strings.TrimSpace(decoded.AccessToken) == "" {
 		return okEnvelope(pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending, Message: "Waiting for GitHub authorization"})
 	}
+	deleteLoginState(req.State)
 	storage := copilotStorage{
 		Type:            providerID,
 		GitHubToken:     decoded.AccessToken,
@@ -968,7 +1063,7 @@ func forwardCopilotStream(req rpcExecutorRequest) {
 			return
 		}
 		if len(chunk.Payload) > 0 {
-			if errEmit := emitPluginStream(streamID, chunk.Payload); errEmit != nil {
+			if errEmit := emitCopilotStreamPayload(streamID, chunk.Payload); errEmit != nil {
 				closePluginStream(streamID, errEmit.Error())
 				return
 			}
@@ -981,6 +1076,62 @@ func forwardCopilotStream(req rpcExecutorRequest) {
 			return
 		}
 	}
+}
+
+func emitCopilotStreamPayload(streamID string, payload []byte) error {
+	for _, frame := range copilotStreamFrames(payload) {
+		if len(frame) == 0 {
+			continue
+		}
+		if errEmit := emitPluginStream(streamID, frame); errEmit != nil {
+			return errEmit
+		}
+	}
+	return nil
+}
+
+func copilotStreamFrames(payload []byte) [][]byte {
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 {
+		return nil
+	}
+
+	frames := make([][]byte, 0)
+	eventData := make([][]byte, 0)
+	sawSSE := false
+
+	flushEvent := func() {
+		if len(eventData) == 0 {
+			return
+		}
+		joined := bytes.TrimSpace(bytes.Join(eventData, []byte("\n")))
+		if len(joined) > 0 {
+			frames = append(frames, bytes.Clone(joined))
+		}
+		eventData = eventData[:0]
+	}
+
+	for _, rawLine := range bytes.Split(payload, []byte("\n")) {
+		line := bytes.TrimRight(rawLine, "\r")
+		if len(bytes.TrimSpace(line)) == 0 {
+			flushEvent()
+			continue
+		}
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		sawSSE = true
+		data := bytes.TrimSpace(line[len("data:"):])
+		if len(data) > 0 {
+			eventData = append(eventData, bytes.Clone(data))
+		}
+	}
+	flushEvent()
+
+	if sawSSE {
+		return frames
+	}
+	return [][]byte{bytes.Clone(trimmed)}
 }
 
 func hostDo(method string, target string, headers http.Header, body []byte) (hostHTTPResponse, error) {
@@ -998,6 +1149,29 @@ func hostDo(method string, target string, headers http.Header, body []byte) (hos
 		return hostHTTPResponse{}, fmt.Errorf("decode host http response: %w", errDecode)
 	}
 	return resp, nil
+}
+
+func hostDoWithTimeout(method string, target string, headers http.Header, body []byte, timeout time.Duration) (hostHTTPResponse, error) {
+	if timeout <= 0 {
+		return hostDo(method, target, headers, body)
+	}
+	type result struct {
+		resp hostHTTPResponse
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		resp, errDo := hostDo(method, target, headers, body)
+		ch <- result{resp: resp, err: errDo}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	select {
+	case item := <-ch:
+		return item.resp, item.err
+	case <-ctx.Done():
+		return hostHTTPResponse{}, fmt.Errorf("credential acquisition timed out after %s", timeout)
+	}
 }
 
 func hostDoStream(hostCallbackID string, method string, target string, headers http.Header, body []byte) (hostHTTPStreamResponse, error) {

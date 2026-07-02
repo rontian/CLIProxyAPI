@@ -312,7 +312,7 @@ func (h *Handler) ServePluginAuthURL(c *gin.Context) bool {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to generate authorization url"})
 		return true
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "url": resp.URL, "state": state})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "url": resp.URL, "state": state, "metadata": resp.Metadata})
 	return true
 }
 
@@ -2566,50 +2566,75 @@ func (h *Handler) GetAuthStatus(c *gin.Context) {
 		ctx := PopulateAuthContext(context.Background(), c)
 		resp, handled, errPoll := host.PollLogin(ctx, provider, state, metadata)
 		if handled {
+			logFields := log.Fields{
+				"provider": provider,
+				"state":    safeOAuthStateForLog(state),
+			}
 			if errPoll != nil {
 				message := strings.TrimSpace(errPoll.Error())
 				if message == "" {
 					message = "Authentication failed"
 				}
+				log.WithFields(logFields).WithError(errPoll).Warn("plugin oauth poll failed")
 				SetOAuthSessionError(state, message)
 				c.JSON(http.StatusOK, gin.H{"status": "error", "error": message})
 				return
 			}
 			switch resp.Status {
 			case "", pluginapi.AuthLoginStatusPending:
-				c.JSON(http.StatusOK, gin.H{"status": "wait"})
+				body := gin.H{"status": "wait"}
+				if message := strings.TrimSpace(resp.Message); message != "" {
+					body["message"] = message
+					log.WithFields(logFields).WithField("message", message).Info("plugin oauth poll pending")
+				} else {
+					log.WithFields(logFields).Info("plugin oauth poll pending")
+				}
+				c.JSON(http.StatusOK, body)
 				return
 			case pluginapi.AuthLoginStatusError:
 				message := strings.TrimSpace(resp.Message)
 				if message == "" {
 					message = "Authentication failed"
 				}
+				log.WithFields(logFields).WithField("message", message).Warn("plugin oauth poll returned error")
 				SetOAuthSessionError(state, message)
 				c.JSON(http.StatusOK, gin.H{"status": "error", "error": message})
 				return
 			case pluginapi.AuthLoginStatusSuccess:
+				log.WithFields(logFields).Info("plugin oauth poll succeeded")
 				records := pluginLoginPollAuths(host, resp)
 				if len(records) == 0 {
+					log.WithFields(logFields).Warn("plugin oauth poll success returned no auth records")
 					SetOAuthSessionError(state, "Authentication failed")
 					c.JSON(http.StatusOK, gin.H{"status": "error", "error": "Authentication failed"})
 					return
 				}
 				if errSave := h.savePluginLoginRecords(ctx, records); errSave != nil {
-					log.WithError(errSave).WithField("provider", provider).Error("failed to save plugin auth tokens")
+					log.WithFields(logFields).WithError(errSave).Error("failed to save plugin auth tokens")
 					SetOAuthSessionError(state, "Failed to save authentication tokens")
 					c.JSON(http.StatusOK, gin.H{"status": "error", "error": "Failed to save authentication tokens"})
 					return
 				}
+				log.WithFields(logFields).WithField("records", len(records)).Info("plugin oauth auth records saved")
 				CompleteOAuthSession(state)
 				c.JSON(http.StatusOK, gin.H{"status": "ok"})
 				return
 			default:
+				log.WithFields(logFields).WithField("status", resp.Status).Info("plugin oauth poll returned unrecognized status")
 				c.JSON(http.StatusOK, gin.H{"status": "wait"})
 				return
 			}
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "wait"})
+}
+
+func safeOAuthStateForLog(state string) string {
+	state = strings.TrimSpace(state)
+	if len(state) <= 12 {
+		return state
+	}
+	return state[:12] + "..."
 }
 
 func pluginLoginPollAuths(host *pluginhost.Host, resp pluginapi.AuthLoginPollResponse) []*coreauth.Auth {

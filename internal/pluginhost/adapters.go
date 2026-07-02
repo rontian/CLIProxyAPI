@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	executorhelps "github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -1589,6 +1590,39 @@ func sendExecutorPluginStreamChunk(ctx context.Context, out chan<- pluginapi.Exe
 	}
 }
 
+func trackPluginExecutorStreamUsage(ctx context.Context, reporter *executorhelps.UsageReporter, in <-chan pluginapi.ExecutorStreamChunk) <-chan pluginapi.ExecutorStreamChunk {
+	if reporter == nil || in == nil {
+		return in
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	out := make(chan pluginapi.ExecutorStreamChunk)
+	go func() {
+		defer close(out)
+		defer reporter.EnsurePublished(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case chunk, ok := <-in:
+				if !ok {
+					return
+				}
+				if chunk.Err != nil {
+					reporter.PublishFailure(ctx, chunk.Err)
+				} else if detail, okUsage := executorhelps.ParseOpenAIStreamUsage(chunk.Payload); okUsage {
+					reporter.Publish(ctx, detail)
+				}
+				if !sendExecutorPluginStreamChunk(ctx, out, chunk) {
+					return
+				}
+			}
+		}
+	}()
+	return out
+}
+
 func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (resp coreexecutor.Response, err error) {
 	if a == nil || a.executor == nil || a.host.isPluginFused(a.pluginID) || !a.host.pluginIdentityCurrent(a.pluginID, a.path, a.version) {
 		return coreexecutor.Response{}, fmt.Errorf("plugin executor %s is unavailable", a.Identifier())
@@ -1605,12 +1639,17 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	if errPrepare != nil {
 		return coreexecutor.Response{}, errPrepare
 	}
+	reporter := executorhelps.NewUsageReporter(ctx, a.provider, prepared.req.Model, auth)
 	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecute != nil {
+		reporter.PublishFailure(ctx, errExecute)
 		return coreexecutor.Response{}, errExecute
 	}
+	payload := a.translateExecutorResponse(ctx, prepared, pluginResp.Payload, false, nil)
+	reporter.Publish(ctx, executorhelps.ParseOpenAIUsage(payload))
+	reporter.EnsurePublished(ctx)
 	return coreexecutor.Response{
-		Payload:  a.translateExecutorResponse(ctx, prepared, pluginResp.Payload, false, nil),
+		Payload:  payload,
 		Metadata: cloneAnyMap(pluginResp.Metadata),
 		Headers:  cloneHeader(pluginResp.Headers),
 	}, nil
@@ -1632,13 +1671,17 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	if errPrepare != nil {
 		return nil, errPrepare
 	}
+	reporter := executorhelps.NewUsageReporter(ctx, a.provider, prepared.req.Model, auth)
 	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecuteStream != nil {
+		reporter.PublishFailure(ctx, errExecuteStream)
 		return nil, errExecuteStream
 	}
+	chunks := a.translateExecutorStreamChunks(ctx, prepared, pluginResp.Chunks)
+	chunks = trackPluginExecutorStreamUsage(ctx, reporter, chunks)
 	return &coreexecutor.StreamResult{
 		Headers: cloneHeader(pluginResp.Headers),
-		Chunks:  mapExecutorStreamChunks(ctx, a.translateExecutorStreamChunks(ctx, prepared, pluginResp.Chunks)),
+		Chunks:  mapExecutorStreamChunks(ctx, chunks),
 	}, nil
 }
 

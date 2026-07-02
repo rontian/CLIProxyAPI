@@ -30,7 +30,8 @@ git merge main
 | OAuth 模型别名            | `oauth-model-alias`、auth JSON `model-aliases`                                                                                       | `internal/config`、auth file handling、model listing/routing                                                                         | 合并时确认全局别名、每认证文件别名、`force-mapping`、`fork` 语义没有被覆盖                         |
 | OpenAI 兼容提供商模型别名 | provider `models[].alias`                                                                                                            | `internal/config`、provider selection、model registry/listing                                                                        | 一个 provider 可暴露多个别名；避免官方模型列表重构后丢失 alias 映射                                |
 | Auto Router               | `auto-router.models`、`auto-router.role-presets`、`auto-router.models[].policy`、`roles[].candidates`、`/v0/management/auto-router*` | `internal/autorouter`、`internal/config/auto_router.go`、`internal/api/handlers/management/auto_router.go`、`internal/api/server.go` | 官方若也实现自动路由，需要产品级合并判断，不要简单选 ours/theirs；候选池与策略字段必须保持向后兼容 |
-| GitHub Copilot Provider 插件 | `plugins.configs.github-copilot`、provider key `github-copilot`、auth JSON `type=github-copilot`                                  | `plugins-src/github-copilot/go`、`docs/github-copilot-provider-plugin_CN.md`、`config.example.yaml`                                  | 保持为插件 provider，不把 Copilot 内部协议下沉到核心路由或 translator；协议变化优先更新插件        |
+| GitHub Copilot Provider 插件 | `plugins.configs.github-copilot`、provider key `github-copilot`、auth JSON `type=github-copilot`、插件 OAuth metadata              | `plugins-src/github-copilot/go`、`internal/pluginhost/adapters.go`、`internal/api/handlers/management/auth_files.go`、`internal/api/handlers/management/model_definitions.go`、`docs/github-copilot-provider-plugin_CN.md`、`config.example.yaml` | 保持为插件 provider，不把 Copilot 内部协议下沉到核心路由或 translator；插件认证启动响应要保留 `metadata`，让管理端区分 device flow 和 callback flow；管理端模型定义接口要继续支持从运行时 registry 回退读取插件 provider 模型；插件 executor 路径要继续发布 usage 记录 |
+| 本地开发命令保护          | `make dev`、`DEV_PORT`                                                                                                               | `Makefile`、`scripts/dev-port-preflight.sh`                                                                                         | 保留 dev 启动前端口清理逻辑，只自动停止 Homebrew `cliproxyapi` 和本仓库旧 dev server；未知进程必须报错而不是误杀 |
 
 ## 冲突处理顺序
 
@@ -46,6 +47,7 @@ git merge main
 - `internal/config/sdk_config.go`
 - `internal/config/auto_router.go`
 - `internal/api/handlers/management/auto_router.go`
+- `internal/api/handlers/management/auth_files.go`
 - `internal/runtime/executor/*`
 - `internal/translator/*`
 - `config.example.yaml`

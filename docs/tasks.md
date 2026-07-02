@@ -60,3 +60,17 @@
 - [x] Integrate Copilot plugin build into local Makefile development flow.
 - [x] Package Copilot plugin artifact in Docker images.
 - [x] Update plugin build and deployment documentation.
+- [x] Verify CPA-Manager can discover OAuth-capable plugins through the existing management plugin list API.
+- [x] Document that plugin providers need a generic management UI entry rather than provider-specific hardcoding.
+- [x] Fix Copilot plugin login startup so unreachable GitHub device-code requests fail quickly.
+- [x] Keep plugin device-flow UI from showing waiting state before an authorization URL is available.
+- [x] Add safe management logs for plugin OAuth polling status without leaking tokens.
+- [x] Let management model definitions fall back to runtime provider models for plugin OAuth providers.
+- [x] Diagnose GitHub Copilot plugin model routing failures from OpenAI-compatible clients.
+- [x] Add Makefile dev preflight that stops stale local CLIProxyAPI listeners before starting the dev server.
+- [x] Fix GitHub Copilot streaming chunks so Chat Completions clients receive valid SSE frames.
+- [x] Publish usage records for plugin executor requests so CPA-Manager realtime monitoring shows Copilot calls.
+- [x] Diagnose why GitHub Copilot Claude-family models are missing from management model lists.
+- [x] Fix dev preflight stale Go server detection for macOS `go run` temp executables.
+- [ ] Design a safe manual model supplement path for provider/auth model lists without making unsupported models look callable.
+- [ ] Investigate a non-default transport for GitHub Copilot Claude models; Go `net/http` currently receives a reduced model set and `model_not_supported` for Claude while VS Code/Python can access some Claude models.

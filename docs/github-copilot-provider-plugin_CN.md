@@ -48,6 +48,24 @@ ExecutorOutputFormats: chat-completions
 
 登录成功只表示 GitHub OAuth 成功。账号是否具备 Copilot 订阅，以获取 Copilot token 或实际模型调用结果为准。
 
+### 管理端入口
+
+GitHub Copilot 认证入口不写死在 CLIProxyAPI 核心 provider 里。CLIProxyAPI 通过 `/v0/management/plugins` 暴露插件能力，CPA-Manager 会筛选：
+
+- `effective_enabled = true`
+- `supports_oauth = true`
+- `oauth_provider` 非空
+
+满足条件后，插件会显示在 CPA-Manager 的「OAuth 登录」页面。用户点击登录后，CPA-Manager 仍复用现有 OAuth 启动、轮询、认证文件查看流程。
+
+Copilot 是 device flow，插件会在认证启动响应的 `metadata` 中返回 `flow=device` 和 `user_code`。管理端应显示设备码和授权链接，不应要求用户填写回调 URL。
+
+这种边界的好处是：
+
+- Copilot 的非公开调用协议隔离在插件内，降低和上游核心代码合并时的冲突。
+- CPA-Manager 只需要做一次通用插件认证 UI，后续其他 OAuth 插件可直接复用。
+- 如果未来 Copilot 被正式提升为核心一等 provider，再迁移到内置实现也不会破坏当前插件认证文件格式。
+
 ## 构建与集成
 
 本地开发时直接使用：
@@ -130,10 +148,11 @@ plugins:
 - Copilot 的内部模型 API 不是稳定公开 API，后续可能需要随 GitHub 客户端协议调整插件。
 - 订阅权限、组织策略、地区限制和网络代理问题只能通过 Copilot token 获取或实际调用结果验证。
 - 不建议把该 provider 作为生产多租户共享服务公开给不可信用户使用。
+- 设备登录状态保存在插件进程内存中；如果登录过程中重启 CLIProxyAPI，需要重新发起登录。
 
 ## 后续方向
 
 - 增加模型发现结果缓存和更清晰的订阅错误分类。
 - 增加 Responses 格式支持。
-- 在 CPA-Manager 中把该插件显示为独立 provider 登录入口。
+- 在 CPA-Manager 中继续完善插件管理、安装和认证状态联动。
 - 为 Auto Router 增加 `github-copilot` 推荐模型和成本/能力分级。

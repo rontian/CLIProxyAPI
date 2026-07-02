@@ -22,8 +22,11 @@ func (h *Handler) GetStaticModelDefinitions(c *gin.Context) {
 
 	models := registry.GetStaticModelDefinitionsByChannel(channel)
 	if models == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown channel", "channel": channel})
-		return
+		models = registry.GetGlobalRegistry().GetAvailableModelsByProvider(channel)
+		if models == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "unknown channel", "channel": channel})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -1,6 +1,7 @@
-.PHONY: help dev build plugins build-copilot-plugin test test-auto fmt sync-config sync-config-dry tools build-sync-config
+.PHONY: help dev dev-preflight build plugins build-copilot-plugin test test-auto fmt sync-config sync-config-dry tools build-sync-config
 
 GO_PROXY ?= https://goproxy.cn,direct
+DEV_PORT ?= 8317
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 PLUGIN_EXT := $(shell if [ "$(GOOS)" = "darwin" ]; then echo dylib; elif [ "$(GOOS)" = "windows" ]; then echo dll; else echo so; fi)
@@ -10,6 +11,7 @@ COPILOT_PLUGIN_OUTPUT ?= $(PLUGIN_OUTPUT_DIR)/github-copilot.$(PLUGIN_EXT)
 help:
 	@echo "CLIProxyAPI development commands"
 	@echo "  make dev                  Build local plugins and run the local server"
+	@echo "  make dev-preflight        Stop stale local CLIProxyAPI listeners on DEV_PORT"
 	@echo "  make build                Build cmd/server"
 	@echo "  make plugins              Build maintained local plugins"
 	@echo "  make build-copilot-plugin Build GitHub Copilot provider plugin"
@@ -21,8 +23,11 @@ help:
 	@echo "  make tools                Build production helper binaries"
 	@echo "  make build-sync-config    Build only sync-config helper binaries"
 
-dev: plugins
+dev: dev-preflight plugins
 	go run ./cmd/server
+
+dev-preflight:
+	./scripts/dev-port-preflight.sh $(DEV_PORT)
 
 build:
 	env GOPROXY=$(GO_PROXY) go build -o test-output ./cmd/server
