@@ -32,6 +32,7 @@ git merge main
 | Auto Router               | `auto-router.models`、`auto-router.role-presets`、`auto-router.models[].policy`、`roles[].candidates`、`/v0/management/auto-router*` | `internal/autorouter`、`internal/config/auto_router.go`、`internal/api/handlers/management/auto_router.go`、`internal/api/server.go` | 官方若也实现自动路由，需要产品级合并判断，不要简单选 ours/theirs；候选池与策略字段必须保持向后兼容 |
 | GitHub Copilot Provider 插件 | `plugins.configs.github-copilot`、provider key `github-copilot`、auth JSON `type=github-copilot`、插件 OAuth metadata              | `plugins-src/github-copilot/go`、`internal/pluginhost/adapters.go`、`internal/api/handlers/management/auth_files.go`、`internal/api/handlers/management/model_definitions.go`、`docs/github-copilot-provider-plugin_CN.md`、`config.example.yaml` | 保持为插件 provider，不把 Copilot 内部协议下沉到核心路由或 translator；插件认证启动响应要保留 `metadata`，让管理端区分 device flow 和 callback flow；管理端模型定义接口要继续支持从运行时 registry 回退读取插件 provider 模型；插件 executor 路径要继续发布 usage 记录；Copilot 请求转发前要清理 `reasoning_effort` 等上游不兼容字段，避免 ZCode/Codex 类客户端的扩展参数触发 400；Copilot 流式 SSE 必须缓冲到完整 event 后再交给 OpenAI handler，避免客户端收到半截 JSON |
 | 本地开发命令保护          | `make dev`、`DEV_PORT`                                                                                                               | `Makefile`、`scripts/dev-run.sh`、`scripts/dev-port-preflight.sh`                                                                    | 保留 dev 启动前端口清理逻辑，只自动停止 Homebrew `cliproxyapi` 和本仓库旧 dev server；未知进程必须报错而不是误杀；Ctrl+C 需要通过 dev-run 清理 `go run` 及其临时 server 子进程 |
+| Docker 构建源配置          | `DEBIAN_MIRROR`、`GOPROXY`、`GOSUMDB`、`GITHUB_PROXY_PREFIX`                                                                          | `Dockerfile`、`docker-compose.yml`                                                                                                  | 默认使用国内源便于本地/NAS 构建，但必须保留 build args 可覆盖；`GITHUB_PROXY_PREFIX` 默认应保持 `https://ghfast.top/https://github.com` 这种可用于 git clone 的完整前缀；本地验证扩展时避免 `pull_policy: always` 覆盖本地构建镜像 |
 
 ## 冲突处理顺序
 
@@ -86,6 +87,13 @@ make build-copilot-plugin
 ```
 
 该命令会按当前 `GOOS/GOARCH` 输出到 `plugins/<GOOS>/<GOARCH>/`。Docker 源码构建还需要确认镜像内 `/CLIProxyAPI/plugins/` 已包含对应 Linux 插件。
+
+如果本次冲突涉及 Dockerfile 或 compose 配置，至少验证：
+
+```bash
+docker compose config
+docker compose build
+```
 
 `go test ./...` 仍应作为最终目标；如果存在已知非本次引入的失败，需要在合并记录中说明。
 

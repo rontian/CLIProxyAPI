@@ -2,15 +2,20 @@ FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
 
-ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=off
+ARG DEBIAN_MIRROR=mirrors.aliyun.com
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=off
+ARG GITHUB_PROXY_PREFIX=https://ghfast.top/https://github.com
 
-RUN sed -i 's#deb.debian.org#mirrors.aliyun.com#g' /etc/apt/sources.list.d/debian.sources && \
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
+
+RUN if [ -n "$DEBIAN_MIRROR" ]; then sed -i "s#deb.debian.org#${DEBIAN_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends build-essential git && \
     rm -rf /var/lib/apt/lists/*
 
-RUN git config --global url."https://ghfast.top".insteadOf "https://github.com"
+RUN if [ -n "$GITHUB_PROXY_PREFIX" ]; then git config --global url."${GITHUB_PROXY_PREFIX}".insteadOf "https://github.com"; fi
 
 COPY go.mod go.sum ./
 
@@ -31,7 +36,9 @@ RUN mkdir -p ./plugins/linux/$(go env GOARCH) && \
 
 FROM debian:bookworm
 
-RUN sed -i 's#deb.debian.org#mirrors.aliyun.com#g' /etc/apt/sources.list.d/debian.sources && \
+ARG DEBIAN_MIRROR=mirrors.aliyun.com
+
+RUN if [ -n "$DEBIAN_MIRROR" ]; then sed -i "s#deb.debian.org#${DEBIAN_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends tzdata ca-certificates && \
     rm -rf /var/lib/apt/lists/*

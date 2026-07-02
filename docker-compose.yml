@@ -1,7 +1,7 @@
 services:
   cli-proxy-api:
     image: ${CLI_PROXY_IMAGE:-eceasy/cli-proxy-api:latest}
-    pull_policy: always
+    pull_policy: ${CLI_PROXY_PULL_POLICY:-missing}
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,6 +9,10 @@ services:
         VERSION: ${VERSION:-dev}
         COMMIT: ${COMMIT:-none}
         BUILD_DATE: ${BUILD_DATE:-unknown}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-mirrors.aliyun.com}
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GOSUMDB: ${GOSUMDB:-off}
+        GITHUB_PROXY_PREFIX: ${GITHUB_PROXY_PREFIX:-https://ghfast.top/https://github.com}
     container_name: cli-proxy-api
     # env_file:
     #   - .env
