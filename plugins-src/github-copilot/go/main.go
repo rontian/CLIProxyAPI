@@ -789,11 +789,36 @@ func rewriteModel(raw []byte, model string, stream bool) []byte {
 		body["model"] = cleanModel
 	}
 	body["stream"] = stream
+	sanitizeCopilotChatPayload(body)
 	out, errMarshal := json.Marshal(body)
 	if errMarshal != nil {
 		return append([]byte(nil), raw...)
 	}
 	return out
+}
+
+func sanitizeCopilotChatPayload(body map[string]any) {
+	if body == nil {
+		return
+	}
+	if _, ok := body["max_tokens"]; !ok {
+		if value, exists := body["max_completion_tokens"]; exists {
+			body["max_tokens"] = value
+		}
+	}
+	for _, key := range []string{
+		"max_completion_tokens",
+		"metadata",
+		"reasoning",
+		"reasoning_effort",
+		"reasoning_summary",
+		"service_tier",
+		"store",
+		"stream_options",
+		"verbosity",
+	} {
+		delete(body, key)
+	}
 }
 
 func authDataFromStorage(storage copilotStorage, label string) (pluginapi.AuthData, error) {
@@ -1051,11 +1076,17 @@ func forwardCopilotStream(req rpcExecutorRequest) {
 		return
 	}
 	if stream.StatusCode < 200 || stream.StatusCode >= 300 {
+		body := readCopilotStreamErrorBody(stream.StreamID, 4096)
 		closeHostStream(stream.StreamID)
-		closePluginStream(streamID, fmt.Sprintf("github copilot stream request failed with status %d", stream.StatusCode))
+		msg := fmt.Sprintf("github copilot stream request failed with status %d", stream.StatusCode)
+		if body != "" {
+			msg += ": " + body
+		}
+		closePluginStream(streamID, msg)
 		return
 	}
 	defer closeHostStream(stream.StreamID)
+	framer := &copilotStreamFramer{}
 	for {
 		chunk, errRead := readHostStream(stream.StreamID)
 		if errRead != nil {
@@ -1063,7 +1094,7 @@ func forwardCopilotStream(req rpcExecutorRequest) {
 			return
 		}
 		if len(chunk.Payload) > 0 {
-			if errEmit := emitCopilotStreamPayload(streamID, chunk.Payload); errEmit != nil {
+			if errEmit := emitCopilotStreamPayload(streamID, framer.Feed(chunk.Payload)); errEmit != nil {
 				closePluginStream(streamID, errEmit.Error())
 				return
 			}
@@ -1073,13 +1104,42 @@ func forwardCopilotStream(req rpcExecutorRequest) {
 			return
 		}
 		if chunk.Done {
+			if errEmit := emitCopilotStreamPayload(streamID, framer.Flush()); errEmit != nil {
+				closePluginStream(streamID, errEmit.Error())
+				return
+			}
 			return
 		}
 	}
 }
 
-func emitCopilotStreamPayload(streamID string, payload []byte) error {
-	for _, frame := range copilotStreamFrames(payload) {
+func readCopilotStreamErrorBody(streamID string, limit int) string {
+	if strings.TrimSpace(streamID) == "" || limit <= 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	for buf.Len() < limit {
+		chunk, errRead := readHostStream(streamID)
+		if errRead != nil {
+			break
+		}
+		if len(chunk.Payload) > 0 {
+			remaining := limit - buf.Len()
+			if len(chunk.Payload) > remaining {
+				buf.Write(chunk.Payload[:remaining])
+			} else {
+				buf.Write(chunk.Payload)
+			}
+		}
+		if chunk.Done || chunk.Error != "" {
+			break
+		}
+	}
+	return strings.TrimSpace(buf.String())
+}
+
+func emitCopilotStreamPayload(streamID string, frames [][]byte) error {
+	for _, frame := range frames {
 		if len(frame) == 0 {
 			continue
 		}
@@ -1090,48 +1150,112 @@ func emitCopilotStreamPayload(streamID string, payload []byte) error {
 	return nil
 }
 
-func copilotStreamFrames(payload []byte) [][]byte {
-	trimmed := bytes.TrimSpace(payload)
+type copilotStreamFramer struct {
+	buffer []byte
+	sawSSE bool
+}
+
+func (f *copilotStreamFramer) Feed(payload []byte) [][]byte {
+	if f == nil || len(payload) == 0 {
+		return nil
+	}
+	f.buffer = append(f.buffer, payload...)
+	frames := make([][]byte, 0)
+	for {
+		event, rest, ok := popCopilotSSEEvent(f.buffer)
+		if !ok {
+			break
+		}
+		f.buffer = rest
+		if frame, okFrame := copilotSSEEventFrame(event); okFrame {
+			f.sawSSE = true
+			frames = append(frames, frame)
+		}
+	}
+	if len(frames) > 0 || f.sawSSE || bytes.Contains(f.buffer, []byte("data:")) {
+		return frames
+	}
+	trimmed := bytes.TrimSpace(f.buffer)
 	if len(trimmed) == 0 {
 		return nil
 	}
+	f.buffer = nil
+	return [][]byte{bytes.Clone(trimmed)}
+}
 
-	frames := make([][]byte, 0)
-	eventData := make([][]byte, 0)
-	sawSSE := false
-
-	flushEvent := func() {
-		if len(eventData) == 0 {
-			return
-		}
-		joined := bytes.TrimSpace(bytes.Join(eventData, []byte("\n")))
-		if len(joined) > 0 {
-			frames = append(frames, bytes.Clone(joined))
-		}
-		eventData = eventData[:0]
+func (f *copilotStreamFramer) Flush() [][]byte {
+	if f == nil {
+		return nil
 	}
+	if len(bytes.TrimSpace(f.buffer)) == 0 {
+		f.buffer = nil
+		return nil
+	}
+	if frame, okFrame := copilotSSEEventFrame(f.buffer); okFrame {
+		f.buffer = nil
+		f.sawSSE = true
+		return [][]byte{frame}
+	}
+	if f.sawSSE {
+		f.buffer = nil
+		return nil
+	}
+	trimmed := bytes.TrimSpace(f.buffer)
+	f.buffer = nil
+	return [][]byte{bytes.Clone(trimmed)}
+}
 
-	for _, rawLine := range bytes.Split(payload, []byte("\n")) {
-		line := bytes.TrimRight(rawLine, "\r")
-		if len(bytes.TrimSpace(line)) == 0 {
-			flushEvent()
+func copilotStreamFrames(payload []byte) [][]byte {
+	framer := &copilotStreamFramer{}
+	frames := framer.Feed(payload)
+	return append(frames, framer.Flush()...)
+}
+
+func popCopilotSSEEvent(payload []byte) ([]byte, []byte, bool) {
+	for i := 0; i < len(payload); i++ {
+		if payload[i] != '\n' {
 			continue
 		}
+		lineStart := i
+		for lineStart > 0 && payload[lineStart-1] != '\n' {
+			lineStart--
+		}
+		line := bytes.TrimRight(payload[lineStart:i], "\r")
+		if len(bytes.TrimSpace(line)) != 0 {
+			continue
+		}
+		event := bytes.TrimSpace(payload[:lineStart])
+		rest := payload[i+1:]
+		if len(event) == 0 {
+			payload = rest
+			i = -1
+			continue
+		}
+		return event, rest, true
+	}
+	return nil, payload, false
+}
+
+func copilotSSEEventFrame(event []byte) ([]byte, bool) {
+	eventData := make([][]byte, 0)
+	for _, rawLine := range bytes.Split(event, []byte("\n")) {
+		line := bytes.TrimRight(rawLine, "\r")
 		if !bytes.HasPrefix(line, []byte("data:")) {
 			continue
 		}
-		sawSSE = true
 		data := bytes.TrimSpace(line[len("data:"):])
 		if len(data) > 0 {
 			eventData = append(eventData, bytes.Clone(data))
 		}
 	}
-	flushEvent()
-
-	if sawSSE {
-		return frames
+	if len(eventData) == 0 {
+		return nil, false
 	}
-	return [][]byte{bytes.Clone(trimmed)}
+	joined := bytes.TrimSpace(bytes.Join(eventData, []byte("\n")))
+	if len(joined) == 0 {
+		return nil, false
+	}
+	return bytes.Clone(joined), true
 }
 
 func hostDo(method string, target string, headers http.Header, body []byte) (hostHTTPResponse, error) {

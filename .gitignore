@@ -15,6 +15,7 @@ conv/*
 temp/*
 refs/*
 plugins/*
+.tmp/
 examples/plugin/bin/*
 
 # Storage backends

@@ -24,7 +24,7 @@ help:
 	@echo "  make build-sync-config    Build only sync-config helper binaries"
 
 dev: dev-preflight plugins
-	go run ./cmd/server
+	./scripts/dev-run.sh
 
 dev-preflight:
 	./scripts/dev-port-preflight.sh $(DEV_PORT)

@@ -72,5 +72,8 @@
 - [x] Publish usage records for plugin executor requests so CPA-Manager realtime monitoring shows Copilot calls.
 - [x] Diagnose why GitHub Copilot Claude-family models are missing from management model lists.
 - [x] Fix dev preflight stale Go server detection for macOS `go run` temp executables.
+- [x] Fix ZCode streaming calls to GitHub Copilot by sanitizing unsupported OpenAI extension fields before plugin forwarding.
+- [x] Make local `make dev` shutdown deterministic when interrupted during plugin unload.
+- [x] Fix GitHub Copilot SSE framing so partial upstream read chunks are buffered before emitting JSON frames.
 - [ ] Design a safe manual model supplement path for provider/auth model lists without making unsupported models look callable.
 - [ ] Investigate a non-default transport for GitHub Copilot Claude models; Go `net/http` currently receives a reduced model set and `model_not_supported` for Claude while VS Code/Python can access some Claude models.
