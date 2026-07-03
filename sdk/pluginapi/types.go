@@ -773,6 +773,8 @@ type HTTPRequest struct {
 	Method string
 	// URL is the absolute upstream URL.
 	URL string
+	// ProxyURL overrides the host/global proxy for this request when provided.
+	ProxyURL string
 	// Headers contains request headers.
 	Headers http.Header
 	// Body contains the raw request body.

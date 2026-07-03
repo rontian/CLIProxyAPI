@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -123,16 +125,111 @@ func (c *hostHTTPClient) doHTTP(ctx context.Context, req pluginapi.HTTPRequest) 
 	}
 	httpReq.Header = cloneHeader(req.Headers)
 	c.recordHTTPRequest(ctx, cfg, httpReq, req.Body)
-	client := helps.NewProxyAwareHTTPClient(ctx, cfg, c.auth, 0)
+	client := c.newRequestHTTPClient(ctx, cfg, req.ProxyURL)
 	if client == nil {
 		client = &http.Client{}
 	}
 	resp, errDo := client.Do(httpReq)
 	if errDo != nil {
 		helps.RecordAPIResponseError(ctx, cfg, errDo)
+		c.logHTTPRequestError(cfg, httpReq, req.ProxyURL, errDo)
 		return nil, cfg, fmt.Errorf("execute host http request: %w", errDo)
 	}
 	return resp, cfg, nil
+}
+
+func (c *hostHTTPClient) newRequestHTTPClient(ctx context.Context, cfg *config.Config, requestProxyURL string) *http.Client {
+	requestProxyURL = strings.TrimSpace(requestProxyURL)
+	if requestProxyURL == "" {
+		return helps.NewProxyAwareHTTPClient(ctx, cfg, c.auth, 0)
+	}
+	return helps.NewProxyAwareHTTPClient(ctx, cfg, &coreauth.Auth{ProxyURL: requestProxyURL}, 0)
+}
+
+func (c *hostHTTPClient) logHTTPRequestError(cfg *config.Config, req *http.Request, requestProxyURL string, err error) {
+	if req == nil {
+		return
+	}
+	fields := log.Fields{
+		"method": req.Method,
+		"url":    safeRequestURLForLog(req),
+	}
+	for key, value := range c.proxyLogFields(cfg, requestProxyURL) {
+		fields[key] = value
+	}
+	log.WithFields(fields).WithError(err).Warn("pluginhost: host http request failed")
+}
+
+func (c *hostHTTPClient) proxyLogFields(cfg *config.Config, requestProxyURL string) log.Fields {
+	proxyURL := ""
+	source := "inherit"
+	requestProxyURL = strings.TrimSpace(requestProxyURL)
+	if requestProxyURL != "" {
+		proxyURL = requestProxyURL
+		source = "request"
+	}
+	if c != nil && c.auth != nil {
+		authProxyURL := strings.TrimSpace(c.auth.ProxyURL)
+		if proxyURL == "" && authProxyURL != "" {
+			proxyURL = authProxyURL
+			source = "auth"
+		}
+	}
+	if proxyURL == "" && cfg != nil {
+		proxyURL = strings.TrimSpace(cfg.ProxyURL)
+		if proxyURL != "" {
+			source = "config"
+		}
+	}
+
+	setting, errParse := proxyutil.Parse(proxyURL)
+	fields := log.Fields{
+		"proxy_source": source,
+		"proxy_url":    proxyURLForLog(proxyURL, setting.Mode),
+	}
+	fields["proxy_mode"] = proxyModeForLog(setting.Mode)
+	if errParse != nil {
+		fields["proxy_error"] = errParse.Error()
+	}
+	return fields
+}
+
+func proxyURLForLog(proxyURL string, mode proxyutil.Mode) string {
+	switch mode {
+	case proxyutil.ModeInherit:
+		return ""
+	case proxyutil.ModeDirect:
+		return strings.TrimSpace(proxyURL)
+	case proxyutil.ModeProxy:
+		return proxyutil.Redact(proxyURL)
+	default:
+		return proxyutil.Redact(proxyURL)
+	}
+}
+
+func proxyModeForLog(mode proxyutil.Mode) string {
+	switch mode {
+	case proxyutil.ModeInherit:
+		return "inherit"
+	case proxyutil.ModeDirect:
+		return "direct"
+	case proxyutil.ModeProxy:
+		return "proxy"
+	case proxyutil.ModeInvalid:
+		return "invalid"
+	default:
+		return "unknown"
+	}
+}
+
+func safeRequestURLForLog(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return ""
+	}
+	out := *req.URL
+	out.RawQuery = ""
+	out.Fragment = ""
+	return out.String()
 }
 
 func (c *hostHTTPClient) recordHTTPRequest(ctx context.Context, cfg *config.Config, req *http.Request, body []byte) {

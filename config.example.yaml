@@ -90,6 +90,7 @@ plugins:
     #   editor-version: "vscode/1.104.0"
     #   editor-plugin-version: "copilot-chat/0.30.0"
     #   user-agent: "GitHubCopilotChat/0.30.0"
+    #   proxy-url: "" # optional, overrides global proxy-url for GitHub Copilot plugin requests
     #   models:
     #     - "gpt-4.1"
     #     - "gpt-4o"

@@ -76,5 +76,8 @@
 - [x] Fix ZCode streaming calls to GitHub Copilot by sanitizing unsupported OpenAI extension fields before plugin forwarding.
 - [x] Make local `make dev` shutdown deterministic when interrupted during plugin unload.
 - [x] Fix GitHub Copilot SSE framing so partial upstream read chunks are buffered before emitting JSON frames.
+- [x] Diagnose NAS GitHub Copilot OAuth token exchange failures and confirm plugin host calls honor configured SOCKS5 proxies.
+- [x] Add safe plugin host HTTP proxy diagnostics for NAS GitHub Copilot OAuth failures.
+- [x] Add GitHub Copilot plugin-level proxy override for OAuth and Copilot API requests.
 - [ ] Design a safe manual model supplement path for provider/auth model lists without making unsupported models look callable.
 - [ ] Investigate a non-default transport for GitHub Copilot Claude models; Go `net/http` currently receives a reduced model set and `model_not_supported` for Claude while VS Code/Python can access some Claude models.

@@ -16,6 +16,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
@@ -121,6 +122,57 @@ func TestHostHTTPDoCallbackRestoresRegisteredRequestContext(t *testing.T) {
 	apiResponse, _ := rawAPIResponse.([]byte)
 	if !bytes.Contains(apiResponse, []byte("=== API RESPONSE 1 ===")) || !bytes.Contains(apiResponse, []byte("upstream-body")) {
 		t.Fatalf("API_RESPONSE = %q, want upstream response details", apiResponse)
+	}
+}
+
+func TestHostHTTPProxyLogFieldsUseConfigWhenAuthMissing(t *testing.T) {
+	client := &hostHTTPClient{}
+
+	fields := client.proxyLogFields(&config.Config{SDKConfig: config.SDKConfig{ProxyURL: "socks5://user:secret@192.168.0.30:7890"}}, "")
+
+	if fields["proxy_source"] != "config" {
+		t.Fatalf("proxy_source = %v, want config", fields["proxy_source"])
+	}
+	if fields["proxy_mode"] != "proxy" {
+		t.Fatalf("proxy_mode = %v, want proxy", fields["proxy_mode"])
+	}
+	if fields["proxy_url"] != "socks5://redacted@192.168.0.30:7890" {
+		t.Fatalf("proxy_url = %v, want redacted URL", fields["proxy_url"])
+	}
+}
+
+func TestHostHTTPProxyLogFieldsUseAuthOverride(t *testing.T) {
+	client := &hostHTTPClient{auth: &coreauth.Auth{ProxyURL: "direct"}}
+
+	fields := client.proxyLogFields(&config.Config{SDKConfig: config.SDKConfig{ProxyURL: "socks5://192.168.0.30:7890"}}, "")
+
+	if fields["proxy_source"] != "auth" {
+		t.Fatalf("proxy_source = %v, want auth", fields["proxy_source"])
+	}
+	if fields["proxy_mode"] != "direct" {
+		t.Fatalf("proxy_mode = %v, want direct", fields["proxy_mode"])
+	}
+	if fields["proxy_url"] != "direct" {
+		t.Fatalf("proxy_url = %v, want direct", fields["proxy_url"])
+	}
+}
+
+func TestHostHTTPProxyLogFieldsUseRequestOverride(t *testing.T) {
+	client := &hostHTTPClient{auth: &coreauth.Auth{ProxyURL: "direct"}}
+
+	fields := client.proxyLogFields(
+		&config.Config{SDKConfig: config.SDKConfig{ProxyURL: "socks5://192.168.0.30:7890"}},
+		"socks5://request-proxy.example.com:1080",
+	)
+
+	if fields["proxy_source"] != "request" {
+		t.Fatalf("proxy_source = %v, want request", fields["proxy_source"])
+	}
+	if fields["proxy_mode"] != "proxy" {
+		t.Fatalf("proxy_mode = %v, want proxy", fields["proxy_mode"])
+	}
+	if fields["proxy_url"] != "socks5://request-proxy.example.com:1080" {
+		t.Fatalf("proxy_url = %v, want request proxy", fields["proxy_url"])
 	}
 }
 

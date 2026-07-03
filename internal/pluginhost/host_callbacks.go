@@ -19,6 +19,7 @@ type rpcHostHTTPRequest struct {
 	HostCallbackID string       `json:"host_callback_id,omitempty"`
 	Method         string       `json:"method,omitempty"`
 	URL            string       `json:"url,omitempty"`
+	ProxyURL       string       `json:"proxy_url,omitempty"`
 	Headers        httpHeader   `json:"headers,omitempty"`
 	Body           []byte       `json:"body,omitempty"`
 	Request        *httpRequest `json:"request,omitempty"`
@@ -27,10 +28,11 @@ type rpcHostHTTPRequest struct {
 type httpHeader map[string][]string
 
 type httpRequest struct {
-	Method  string     `json:"method,omitempty"`
-	URL     string     `json:"url,omitempty"`
-	Headers httpHeader `json:"headers,omitempty"`
-	Body    []byte     `json:"body,omitempty"`
+	Method   string     `json:"method,omitempty"`
+	URL      string     `json:"url,omitempty"`
+	ProxyURL string     `json:"proxy_url,omitempty"`
+	Headers  httpHeader `json:"headers,omitempty"`
+	Body     []byte     `json:"body,omitempty"`
 }
 
 type rpcHostHTTPStreamResponse struct {
@@ -228,17 +230,19 @@ func decodeHostHTTPRequestWithCallbackID(raw []byte) (pluginapi.HTTPRequest, str
 	}
 	if req.Request != nil {
 		return pluginapi.HTTPRequest{
-			Method:  req.Request.Method,
-			URL:     req.Request.URL,
-			Headers: map[string][]string(req.Request.Headers),
-			Body:    append([]byte(nil), req.Request.Body...),
+			Method:   req.Request.Method,
+			URL:      req.Request.URL,
+			ProxyURL: strings.TrimSpace(req.Request.ProxyURL),
+			Headers:  map[string][]string(req.Request.Headers),
+			Body:     append([]byte(nil), req.Request.Body...),
 		}, req.HostCallbackID, nil
 	}
 	return pluginapi.HTTPRequest{
-		Method:  req.Method,
-		URL:     req.URL,
-		Headers: map[string][]string(req.Headers),
-		Body:    append([]byte(nil), req.Body...),
+		Method:   req.Method,
+		URL:      req.URL,
+		ProxyURL: strings.TrimSpace(req.ProxyURL),
+		Headers:  map[string][]string(req.Headers),
+		Body:     append([]byte(nil), req.Body...),
 	}, req.HostCallbackID, nil
 }
 

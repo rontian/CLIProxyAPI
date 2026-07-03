@@ -119,6 +119,7 @@ plugins:
       editor-version: "vscode/1.104.0"
       editor-plugin-version: "copilot-chat/0.30.0"
       user-agent: "GitHubCopilotChat/0.30.0"
+      proxy-url: "" # 可选；仅覆盖 GitHub Copilot 插件请求的代理，例如 socks5h://192.168.0.30:7890
       models:
         - "gpt-4.1"
         - "gpt-4o"
@@ -126,6 +127,7 @@ plugins:
 ```
 
 `models` 是模型发现失败时的兜底列表。实际可用模型仍以 GitHub Copilot token 和模型列表接口返回为准。
+`proxy-url` 为空时复用全局 `proxy-url`；填写后会强制 GitHub Copilot 插件的设备码、OAuth token、Copilot token、模型列表和聊天请求使用该代理。
 
 ## 调用
 

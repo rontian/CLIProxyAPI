@@ -150,6 +150,7 @@ type pluginConfig struct {
 	EditorPlugin      string   `yaml:"editor-plugin-version"`
 	UserAgent         string   `yaml:"user-agent"`
 	IntegrationID     string   `yaml:"integration-id"`
+	ProxyURL          string   `yaml:"proxy-url"`
 }
 
 type deviceCodeResponse struct {
@@ -248,6 +249,7 @@ type hostHTTPRequest struct {
 	HostCallbackID string      `json:"host_callback_id,omitempty"`
 	Method         string      `json:"method,omitempty"`
 	URL            string      `json:"url,omitempty"`
+	ProxyURL       string      `json:"proxy_url,omitempty"`
 	Headers        http.Header `json:"headers,omitempty"`
 	Body           []byte      `json:"body,omitempty"`
 }
@@ -445,6 +447,7 @@ func pluginRegistration(cfg pluginConfig) registration {
 				{Name: "editor-plugin-version", Type: pluginapi.ConfigFieldTypeString, Description: "Editor-Plugin-Version header sent to Copilot."},
 				{Name: "user-agent", Type: pluginapi.ConfigFieldTypeString, Description: "User-Agent header sent to GitHub and Copilot."},
 				{Name: "integration-id", Type: pluginapi.ConfigFieldTypeString, Description: "Optional Copilot-Integration-Id header."},
+				{Name: "proxy-url", Type: pluginapi.ConfigFieldTypeString, Description: "Optional proxy URL for GitHub Copilot plugin requests. Supports socks5, socks5h, http, https, direct, or none."},
 			},
 		},
 		Capabilities: registrationCapability{
@@ -927,6 +930,9 @@ func mergeConfig(base pluginConfig, override pluginConfig) pluginConfig {
 	if override.IntegrationID != "" {
 		base.IntegrationID = override.IntegrationID
 	}
+	if override.ProxyURL != "" {
+		base.ProxyURL = override.ProxyURL
+	}
 	return base
 }
 
@@ -952,6 +958,7 @@ func normalizeConfig(cfg pluginConfig) pluginConfig {
 	if strings.TrimSpace(cfg.UserAgent) == "" {
 		cfg.UserAgent = defaultUserAgent
 	}
+	cfg.ProxyURL = strings.TrimSpace(cfg.ProxyURL)
 	cfg.Models = normalizedModels(cfg.Models)
 	return cfg
 }
@@ -1259,11 +1266,13 @@ func copilotSSEEventFrame(event []byte) ([]byte, bool) {
 }
 
 func hostDo(method string, target string, headers http.Header, body []byte) (hostHTTPResponse, error) {
+	cfg := getConfig()
 	result, errCall := callHost(pluginabi.MethodHostHTTPDo, hostHTTPRequest{
-		Method:  method,
-		URL:     target,
-		Headers: headers,
-		Body:    body,
+		Method:   method,
+		URL:      target,
+		ProxyURL: cfg.ProxyURL,
+		Headers:  headers,
+		Body:     body,
 	})
 	if errCall != nil {
 		return hostHTTPResponse{}, errCall
@@ -1299,10 +1308,12 @@ func hostDoWithTimeout(method string, target string, headers http.Header, body [
 }
 
 func hostDoStream(hostCallbackID string, method string, target string, headers http.Header, body []byte) (hostHTTPStreamResponse, error) {
+	cfg := getConfig()
 	result, errCall := callHost(pluginabi.MethodHostHTTPDoStream, hostHTTPRequest{
 		HostCallbackID: hostCallbackID,
 		Method:         method,
 		URL:            target,
+		ProxyURL:       cfg.ProxyURL,
 		Headers:        headers,
 		Body:           body,
 	})
